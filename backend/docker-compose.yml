@@ -1,0 +1,97 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# FlickTV AI — Docker Compose (Production)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+version: '3.9'
+
+services:
+
+  # ── API Backend ──────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flicktv-api
+    restart: unless-stopped
+    env_file: .env.production
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - flicktv-network
+    depends_on:
+      - redis
+
+  # ── Redis Cache ──────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: flicktv-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - flicktv-network
+
+  # ── Nginx Reverse Proxy ──────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: flicktv-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+    networks:
+      - flicktv-network
+
+  # ── Stream Health Worker ─────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: flicktv-worker
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      WORKER_MODE: stream_health
+    networks:
+      - flicktv-network
+    depends_on:
+      - redis
+
+volumes:
+  redis-data:
+
+networks:
+  flicktv-network:
+    driver: bridge
+
+---
+# Dockerfile
+# ═══════════════════════════════════════════════════════════════════════════════
+# FROM node:20-alpine AS builder
+# WORKDIR /app
+# COPY package*.json ./
+# RUN npm ci --only=production
+# COPY . .
+# 
+# FROM node:20-alpine
+# WORKDIR /app
+# COPY --from=builder /app .
+# RUN addgroup -g 1001 -S nodejs && adduser -S flicktv -u 1001
+# USER flicktv
+# EXPOSE 3001
+# CMD ["node", "server.js"]
