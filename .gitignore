@@ -37,23 +37,19 @@ logs/
 # IDEs
 .vscode/
 .idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
 
 # Testing
 coverage/
 .nyc_output/
-
-# Docker
-*.pid
 
 # Secrets & keys
 *.pem
 *.key
 *.cert
 *.p12
+
+# SSL / Docker
+ssl/
 
 # Supabase local
 supabase/.branches

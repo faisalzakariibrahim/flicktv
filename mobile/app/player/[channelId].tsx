@@ -1,0 +1,160 @@
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { useEvent } from 'expo';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { UpgradeModal } from '../../components/UpgradeModal';
+import { theme } from '../../constants/theme';
+import { api, UpgradeRequiredError } from '../../lib/api';
+import { useChannelsStore } from '../../stores/channelsStore';
+
+export default function PlayerScreen() {
+  const { channelId } = useLocalSearchParams<{ channelId: string }>();
+  const router = useRouter();
+  const { toggleFavorite, favorites } = useChannelsStore();
+
+  const [channel, setChannel] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeInfo, setUpgradeInfo] = useState({ used: 0, limit: 3 });
+  const [isFav, setIsFav] = useState(false);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+
+  const player = useVideoPlayer(
+    streamUrl ? { uri: streamUrl, contentType: streamUrl.includes('.m3u8') ? 'hls' : undefined } : null,
+    p => { if (streamUrl) p.play(); }
+  );
+
+  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
+
+  useEffect(() => {
+    loadChannel();
+  }, [channelId]);
+
+  const loadChannel = async () => {
+    try {
+      const res = await api.channels.get(channelId);
+      setChannel(res.channel);
+      setIsFav(favorites.some(f => f.id === channelId));
+
+      // Get proxied stream URL (freemium check happens here on backend)
+      const proxied = await api.stream.proxyUrl(res.channel.stream_url);
+      setStreamUrl(proxied);
+
+      // Record watch
+      api.channels.recordWatch(channelId, { device_type: 'mobile' }).catch(() => {});
+    } catch (e: any) {
+      if (e instanceof UpgradeRequiredError) {
+        setUpgradeInfo({ used: e.streamsUsed, limit: e.streamsLimit });
+        setShowUpgrade(true);
+      } else {
+        setError(e.message || 'Failed to load channel');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFavorite = async () => {
+    const fav = await toggleFavorite(channelId);
+    setIsFav(fav);
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={theme.colors.accent} />
+        <Text style={styles.loadingText}>Loading stream...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>{error}</Text>
+        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+          <Text style={styles.backBtnText}>Go Back</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.root}>
+      {/* Video */}
+      {streamUrl && (
+        <VideoView
+          player={player}
+          style={StyleSheet.absoluteFill}
+          allowsFullscreen
+          allowsPictureInPicture
+          nativeControls={false}
+        />
+      )}
+
+      {/* Overlay controls */}
+      <SafeAreaView style={styles.overlay} edges={['top', 'bottom']}>
+        {/* Top bar */}
+        <View style={styles.topBar}>
+          <Pressable style={styles.iconBtn} onPress={() => router.back()}>
+            <Text style={styles.iconBtnText}>‹ Back</Text>
+          </Pressable>
+          <View style={{ flex: 1 }} />
+          <Pressable style={styles.iconBtn} onPress={handleFavorite}>
+            <Text style={[styles.iconBtnText, { color: isFav ? theme.colors.accent : '#fff' }]}>
+              {isFav ? '♥' : '♡'}
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Center play/pause */}
+        <Pressable style={styles.centerBtn} onPress={() => isPlaying ? player.pause() : player.play()}>
+          <Text style={styles.centerBtnText}>{isPlaying ? '⏸' : '▶'}</Text>
+        </Pressable>
+
+        {/* Bottom info */}
+        <View style={styles.bottomBar}>
+          <Text style={styles.channelName}>{channel?.name}</Text>
+          {channel?.is_live && (
+            <View style={styles.livePill}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+          )}
+          {channel?.category && <Text style={styles.channelCat}>{channel.category}</Text>}
+        </View>
+      </SafeAreaView>
+
+      <UpgradeModal
+        visible={showUpgrade}
+        streamsUsed={upgradeInfo.used}
+        streamsLimit={upgradeInfo.limit}
+        onClose={() => { setShowUpgrade(false); router.back(); }}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#000' },
+  center: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
+  loadingText: { color: theme.colors.textSecondary, marginTop: theme.spacing.md },
+  errorText: { color: theme.colors.error, fontSize: theme.fontSize.md, marginBottom: theme.spacing.md },
+  backBtn: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.full, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
+  backBtnText: { color: theme.colors.text, fontWeight: '600' },
+  overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between' },
+  topBar: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.md, backgroundColor: 'rgba(0,0,0,0.4)' },
+  iconBtn: { padding: theme.spacing.sm },
+  iconBtnText: { color: '#fff', fontSize: theme.fontSize.lg, fontWeight: '600' },
+  centerBtn: { alignSelf: 'center', width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  centerBtnText: { color: '#fff', fontSize: 28 },
+  bottomBar: { padding: theme.spacing.md, backgroundColor: 'rgba(0,0,0,0.5)' },
+  channelName: { color: '#fff', fontSize: theme.fontSize.lg, fontWeight: '700' },
+  livePill: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.live, marginRight: 4 },
+  liveText: { color: theme.colors.live, fontSize: theme.fontSize.xs, fontWeight: '700' },
+  channelCat: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, marginTop: 2 },
+});
