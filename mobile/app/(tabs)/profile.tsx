@@ -22,7 +22,7 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+  const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Guest';
   const email = user?.email || '';
   const isPremium = subscription?.plan === 'premium';
   const freemium = subscription?.freemium;
@@ -37,16 +37,28 @@ export default function ProfileScreen() {
             <Text style={styles.avatarInitial}>{displayName[0]?.toUpperCase()}</Text>
           </View>
           <Text style={styles.name}>{displayName}</Text>
-          <Text style={styles.email}>{email}</Text>
-          <View style={[styles.planBadge, isPremium && styles.planBadgePremium]}>
-            <Text style={[styles.planText, isPremium && styles.planTextPremium]}>
-              {isPremium ? '★ Premium' : 'Free Plan'}
-            </Text>
-          </View>
+          {email ? <Text style={styles.email}>{email}</Text> : null}
+          {session ? (
+            <View style={[styles.planBadge, isPremium && styles.planBadgePremium]}>
+              <Text style={[styles.planText, isPremium && styles.planTextPremium]}>
+                {isPremium ? '★ Premium' : 'Free Plan'}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
+        {/* Guest sign-in prompt */}
+        {!session && (
+          <View style={styles.section}>
+            <Text style={styles.guestText}>Sign in to save favorites, import playlists, and use Flick AI.</Text>
+            <Pressable style={styles.signInBtn} onPress={() => router.push('/(auth)/login')}>
+              <Text style={styles.signInBtnText}>Sign In / Create Account</Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* Freemium meter */}
-        {!isPremium && freemium && (
+        {session && !isPremium && freemium && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Free Streams</Text>
             <View style={styles.meterRow}>
@@ -78,12 +90,14 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <Pressable style={[styles.row, styles.signOutRow]} onPress={handleSignOut}>
-            <Text style={styles.signOutText}>Sign Out</Text>
-          </Pressable>
-        </View>
+        {session && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Account</Text>
+            <Pressable style={[styles.row, styles.signOutRow]} onPress={handleSignOut}>
+              <Text style={styles.signOutText}>Sign Out</Text>
+            </Pressable>
+          </View>
+        )}
 
         <Text style={styles.version}>FlickTV v1.0.0</Text>
       </ScrollView>
@@ -104,6 +118,9 @@ const styles = StyleSheet.create({
   planTextPremium: { color: theme.colors.accent },
   section: { marginHorizontal: theme.spacing.md, marginBottom: theme.spacing.lg },
   sectionTitle: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: theme.spacing.sm },
+  guestText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, textAlign: 'center', marginBottom: theme.spacing.md },
+  signInBtn: { backgroundColor: theme.colors.accent, borderRadius: theme.radius.full, paddingVertical: theme.spacing.md, alignItems: 'center' },
+  signInBtnText: { color: '#000', fontSize: theme.fontSize.md, fontWeight: '700' },
   meterRow: { flexDirection: 'row', alignItems: 'center', marginBottom: theme.spacing.sm },
   meterTrack: { flex: 1, height: 6, backgroundColor: theme.colors.surface, borderRadius: 3, marginRight: theme.spacing.sm, overflow: 'hidden' },
   meterFill: { height: '100%', backgroundColor: theme.colors.accent, borderRadius: 3 },

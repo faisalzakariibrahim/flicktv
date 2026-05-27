@@ -4,15 +4,13 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChannelCard } from '../../components/ChannelCard';
 import { theme } from '../../constants/theme';
-import { useAuthStore } from '../../stores/authStore';
 import { useChannelsStore } from '../../stores/channelsStore';
 
 export default function FavoritesScreen() {
   const router = useRouter();
   const { favorites, loading, fetchFavorites } = useChannelsStore();
-  const { session } = useAuthStore();
 
-  useEffect(() => { if (session) fetchFavorites(); }, [session]);
+  useEffect(() => { fetchFavorites(); }, []);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>

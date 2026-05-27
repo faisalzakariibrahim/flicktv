@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChannelCard } from '../../components/ChannelCard';
 import { CategoryPill } from '../../components/CategoryPill';
 import { theme } from '../../constants/theme';
-import { useAuthStore } from '../../stores/authStore';
 import { useChannelsStore } from '../../stores/channelsStore';
 
 const CATEGORIES = [
@@ -20,21 +19,24 @@ const CATEGORIES = [
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, session } = useAuthStore();
   const { channels, trending, history, loading, selectedCategory, fetchChannels, fetchTrending, fetchHistory, setCategory } = useChannelsStore();
 
   useEffect(() => {
-    if (!session) return;
     fetchChannels();
     fetchTrending();
     fetchHistory();
-  }, [session]);
+  }, []);
 
   const greeting = () => {
     const h = new Date().getHours();
     if (h < 12) return 'Good morning';
     if (h < 18) return 'Good afternoon';
     return 'Good evening';
+  };
+
+  const handleCategoryChange = (value: string) => {
+    setCategory(value);
+    fetchChannels(value === 'all' ? undefined : value);
   };
 
   return (

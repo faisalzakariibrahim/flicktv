@@ -21,7 +21,7 @@ import channelRouter from './routes/channels.js';
 import userRouter from './routes/users.js';
 import aiRouter from './ai.js';
 import adminRouter from './routes/admin.js';
-import { verifyToken } from './middleware/auth.js';
+import { verifyToken, requireAuth } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
 
 const app = express();
@@ -73,10 +73,10 @@ app.use((req, _res, next) => {
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
 app.use('/api/playlists', verifyToken, playlistRouter);
-app.use('/api/channels', verifyToken, channelRouter);
-app.use('/api/users', verifyToken, userRouter);
-app.use('/api/ai', verifyToken, aiRouter);
-app.use('/api/admin', verifyToken, adminRouter);
+app.use('/api/channels', verifyToken, channelRouter);  // soft auth — public browsing OK
+app.use('/api/users', requireAuth, userRouter);
+app.use('/api/ai', requireAuth, aiRouter);
+app.use('/api/admin', requireAuth, adminRouter);
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
@@ -89,32 +89,6 @@ app.get('/api/proxy/stream', verifyToken, async (req, res) => {
   if (!url) return res.status(400).json({ error: 'URL required' });
 
   try {
-    // ── Freemium gate ──────────────────────────────────────────────────────────
-    const { data: user } = await supabase
-      .from('users')
-      .select('plan, streams_watched')
-      .eq('id', req.user.id)
-      .single();
-
-    if (user?.plan === 'free' && (user?.streams_watched || 0) >= FREE_STREAM_LIMIT) {
-      return res.status(402).json({
-        error: 'Free plan limit reached',
-        code: 'UPGRADE_REQUIRED',
-        streams_used: user.streams_watched,
-        streams_limit: FREE_STREAM_LIMIT,
-        message: `You've used your ${FREE_STREAM_LIMIT} free streams. Upgrade to Premium to keep watching.`,
-      });
-    }
-
-    // Increment stream counter for free users
-    if (user?.plan === 'free') {
-      await supabase
-        .from('users')
-        .update({ streams_watched: (user.streams_watched || 0) + 1 })
-        .eq('id', req.user.id);
-    }
-    // ──────────────────────────────────────────────────────────────────────────
-
     const decoded = decodeURIComponent(url);
     const response = await fetch(decoded, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlickTV/1.0)' },
@@ -130,7 +104,7 @@ app.get('/api/proxy/stream', verifyToken, async (req, res) => {
 });
 
 // ─── M3U Parse Endpoint ───────────────────────────────────────────────────────
-app.post('/api/parse/m3u', verifyToken, async (req, res) => {
+app.post('/api/parse/m3u', async (req, res) => {
   const { url, content } = req.body;
 
   try {
@@ -152,7 +126,7 @@ app.post('/api/parse/m3u', verifyToken, async (req, res) => {
 });
 
 // ─── EPG Parse Endpoint ───────────────────────────────────────────────────────
-app.post('/api/parse/epg', verifyToken, async (req, res) => {
+app.post('/api/parse/epg', async (req, res) => {
   const { url } = req.body;
   try {
     const response = await fetch(url);
@@ -166,7 +140,7 @@ app.post('/api/parse/epg', verifyToken, async (req, res) => {
 });
 
 // ─── Stream Health Check ──────────────────────────────────────────────────────
-app.post('/api/stream/health', verifyToken, async (req, res) => {
+app.post('/api/stream/health', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'URL required' });
 

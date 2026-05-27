@@ -1,27 +1,39 @@
 import { supabase } from '../server.js';
 import { logger } from '../utils/logger.js';
 
-/**
- * Verify Supabase JWT and attach user to req.user.
- * Works for email/password, Google, and Apple sessions — all token types are
- * issued by Supabase Auth, so a single getUser() call covers all providers.
- */
-export async function verifyToken(req, res, next) {
+// Soft auth: populates req.user if a valid token is present, but never blocks.
+export async function verifyToken(req, _res, next) {
   const authHeader = req.headers.authorization;
-  // Also accept ?token= for video player requests that can't send headers
   const token = authHeader?.startsWith('Bearer ')
     ? authHeader.slice(7)
     : req.query.token;
 
-  if (!token) {
-    return res.status(401).json({ error: 'Missing authorization header' });
-  }
+  if (!token) return next();
 
   try {
     const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+    if (!error && user) {
+      req.user = user;
+      req.token = token;
     }
+  } catch (err) {
+    logger.error('Token verification failed', err);
+  }
+  next();
+}
+
+// Hard auth: use this on routes that truly require a logged-in user.
+export async function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : req.query.token;
+
+  if (!token) return res.status(401).json({ error: 'Missing authorization header' });
+
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) return res.status(401).json({ error: 'Invalid or expired token' });
     req.user = user;
     req.token = token;
     next();
@@ -31,10 +43,7 @@ export async function verifyToken(req, res, next) {
   }
 }
 
-/**
- * Enforce that the user is an admin (checks users.is_admin column).
- * Must be used AFTER verifyToken.
- */
+// Must be used after requireAuth.
 export async function requireAdmin(req, res, next) {
   try {
     const { data, error } = await supabase
@@ -43,9 +52,7 @@ export async function requireAdmin(req, res, next) {
       .eq('id', req.user.id)
       .single();
 
-    if (error || !data?.is_admin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
+    if (error || !data?.is_admin) return res.status(403).json({ error: 'Admin access required' });
     next();
   } catch (err) {
     logger.error('Admin check failed', err);

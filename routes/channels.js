@@ -1,14 +1,11 @@
-/**
- * FlickTV AI — Channel Routes
- */
-
 import { Router } from 'express';
 import { supabase } from '../server.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
 
-// ─── List Channels ────────────────────────────────────────────────────────────
+// ─── List Channels ─────────────────────────────────────────────────────────────
+// Public — no auth required. Unauthenticated users see all channels.
 router.get('/', async (req, res) => {
   const { search, category, country, playlist_id, is_live, page = 1, limit = 50 } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -17,9 +14,11 @@ router.get('/', async (req, res) => {
     let query = supabase
       .from('channels')
       .select('id, name, logo_url, category, group_title, country, is_hd, is_4k, is_live, is_working, stream_url', { count: 'exact' })
-      .eq('user_id', req.user.id)
       .range(offset, offset + parseInt(limit) - 1)
       .order('name');
+
+    // If authenticated, scope to their playlists only
+    if (req.user) query = query.eq('user_id', req.user.id);
 
     if (search) query = query.ilike('name', `%${search}%`);
     if (category) query = query.eq('category', category);
@@ -37,7 +36,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ─── Trending Channels ────────────────────────────────────────────────────────
+// ─── Trending Channels ─────────────────────────────────────────────────────────
 router.get('/trending', async (req, res) => {
   try {
     const { data, error } = await supabase.rpc('get_trending_channels', { p_limit: 20 });
@@ -63,16 +62,38 @@ router.get('/trending', async (req, res) => {
   }
 });
 
-// ─── Get Single Channel ───────────────────────────────────────────────────────
-router.get('/:id', async (req, res) => {
+// ─── List Favorites (auth required) ───────────────────────────────────────────
+router.get('/me/favorites', async (req, res) => {
+  if (!req.user) return res.json({ channels: [] });
+
   try {
     const { data, error } = await supabase
+      .from('favorites')
+      .select('added_at, channels(id, name, logo_url, category, is_hd, is_live, stream_url)')
+      .eq('user_id', req.user.id)
+      .order('added_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const channels = data?.map(f => ({ ...f.channels, added_at: f.added_at })) || [];
+    res.json({ channels });
+  } catch (err) {
+    logger.error('List favorites error', err);
+    res.status(500).json({ error: 'Failed to fetch favorites' });
+  }
+});
+
+// ─── Get Single Channel ────────────────────────────────────────────────────────
+router.get('/:id', async (req, res) => {
+  try {
+    let query = supabase
       .from('channels')
       .select('*, playlists(name, type)')
-      .eq('id', req.params.id)
-      .eq('user_id', req.user.id)
-      .single();
+      .eq('id', req.params.id);
 
+    if (req.user) query = query.eq('user_id', req.user.id);
+
+    const { data, error } = await query.single();
     if (error || !data) return res.status(404).json({ error: 'Channel not found' });
     res.json({ channel: data });
   } catch (err) {
@@ -81,8 +102,10 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// ─── Update Channel ───────────────────────────────────────────────────────────
+// ─── Update Channel (auth required) ───────────────────────────────────────────
 router.put('/:id', async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Login required' });
+
   const allowed = ['name', 'logo_url', 'category', 'country', 'language', 'is_hd', 'is_working'];
   const updates = Object.fromEntries(
     Object.entries(req.body).filter(([k]) => allowed.includes(k))
@@ -105,8 +128,10 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// ─── Delete Channel ───────────────────────────────────────────────────────────
+// ─── Delete Channel (auth required) ───────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Login required' });
+
   try {
     const { error } = await supabase
       .from('channels')
@@ -122,8 +147,10 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// ─── Toggle Favorite ──────────────────────────────────────────────────────────
+// ─── Toggle Favorite (auth required) ──────────────────────────────────────────
 router.post('/:id/favorite', async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Login required to save favorites' });
+
   const channelId = req.params.id;
   const userId = req.user.id;
 
@@ -148,26 +175,7 @@ router.post('/:id/favorite', async (req, res) => {
   }
 });
 
-// ─── List Favorites ───────────────────────────────────────────────────────────
-router.get('/me/favorites', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('favorites')
-      .select('added_at, channels(id, name, logo_url, category, is_hd, is_live, stream_url)')
-      .eq('user_id', req.user.id)
-      .order('added_at', { ascending: false });
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    const channels = data?.map(f => ({ ...f.channels, added_at: f.added_at })) || [];
-    res.json({ channels });
-  } catch (err) {
-    logger.error('List favorites error', err);
-    res.status(500).json({ error: 'Failed to fetch favorites' });
-  }
-});
-
-// ─── Record Watch ─────────────────────────────────────────────────────────────
+// ─── Record Watch ──────────────────────────────────────────────────────────────
 router.post('/:id/watch', async (req, res) => {
   const { duration_secs = 0, device_type } = req.body;
 
@@ -180,22 +188,25 @@ router.post('/:id/watch', async (req, res) => {
 
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
 
-    await supabase.from('watch_history').insert({
-      user_id: req.user.id,
-      channel_id: req.params.id,
-      channel_name: channel.name,
-      channel_logo: channel.logo_url,
-      stream_url: channel.stream_url,
-      duration_secs,
-      device_type: device_type || 'mobile',
-    });
+    // Only record history for authenticated users
+    if (req.user) {
+      await supabase.from('watch_history').insert({
+        user_id: req.user.id,
+        channel_id: req.params.id,
+        channel_name: channel.name,
+        channel_logo: channel.logo_url,
+        stream_url: channel.stream_url,
+        duration_secs,
+        device_type: device_type || 'mobile',
+      });
 
-    await supabase.from('analytics_events').insert({
-      user_id: req.user.id,
-      event_type: 'stream_start',
-      channel_id: req.params.id,
-      device_type: device_type || 'mobile',
-    });
+      await supabase.from('analytics_events').insert({
+        user_id: req.user.id,
+        event_type: 'stream_start',
+        channel_id: req.params.id,
+        device_type: device_type || 'mobile',
+      });
+    }
 
     res.json({ recorded: true });
   } catch (err) {

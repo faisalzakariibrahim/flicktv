@@ -16,13 +16,11 @@ export class UpgradeRequiredError extends Error {
   }
 }
 
-async function authHeaders() {
+async function authHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Not authenticated');
-  return {
-    Authorization: `Bearer ${session.access_token}`,
-    'Content-Type': 'application/json',
-  };
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (session) headers['Authorization'] = `Bearer ${session.access_token}`;
+  return headers;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -75,11 +73,9 @@ export const api = {
   stream: {
     proxyUrl: async (streamUrl: string) => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
-      // On web, load streams directly — the proxy only rewrites the manifest
-      // not the HLS segment URLs, causing CORS failures on the segments.
       if (typeof window !== 'undefined') return streamUrl;
-      return `${API_BASE}/api/proxy/stream?url=${encodeURIComponent(streamUrl)}&token=${session.access_token}`;
+      const tokenParam = session ? `&token=${session.access_token}` : '';
+      return `${API_BASE}/api/proxy/stream?url=${encodeURIComponent(streamUrl)}${tokenParam}`;
     },
     health: (url: string) =>
       request<any>('/api/stream/health', { method: 'POST', body: JSON.stringify({ url }) }),
