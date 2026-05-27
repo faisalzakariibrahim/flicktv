@@ -1,89 +1,103 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChannelCard } from '../../components/ChannelCard';
-import { CategoryPill } from '../../components/CategoryPill';
 import { theme } from '../../constants/theme';
-import { api } from '../../lib/api';
 
-const CATS = [
-  { label: 'All Live', value: 'all' },
-  { label: 'News', value: 'news' },
-  { label: 'Sports', value: 'sports' },
-  { label: 'Movies', value: 'movies' },
-  { label: 'Entertainment', value: 'entertainment' },
+const SPORTS_SITES = [
+  { name: 'Yalla Shoot',    url: 'https://yalla-shoot-new.com/',   icon: '⚽', color: '#22c55e' },
+  { name: 'Yalla Shoot SX', url: 'https://yallashoot.sx/',         icon: '⚽', color: '#16a34a' },
+  { name: 'Koora Live Hub', url: 'https://kooralivehub.com/',      icon: '🏆', color: '#f59e0b' },
+  { name: 'Koora Online',   url: 'https://kooooraonline.com/',     icon: '🏆', color: '#d97706' },
+  { name: 'Live Koora',     url: 'https://livekoora.today/',       icon: '📺', color: '#3b82f6' },
+  { name: 'Koora TV',       url: 'https://kooratv.life/',          icon: '📺', color: '#2563eb' },
+  { name: 'Koora CDF',      url: 'https://koora.cfd/',             icon: '🎯', color: '#8b5cf6' },
+  { name: 'TV96',           url: 'https://tv96.cfd/',              icon: '📡', color: '#ec4899' },
+  { name: 'Live TV SX',     url: 'https://live-tv.sx/',            icon: '📡', color: '#f43f5e' },
+  { name: 'Stream2Watch',   url: 'https://www.stream2watch.com/',  icon: '▶',  color: '#06b6d4' },
 ];
 
-export default function LiveScreen() {
+export default function LiveSportsScreen() {
   const router = useRouter();
-  const [channels, setChannels] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [category, setCategory] = useState('all');
 
-  const load = async (cat: string) => {
-    setLoading(true);
-    try {
-      const params: any = { is_live: 'true', limit: '100' };
-      if (cat !== 'all') params.category = cat;
-      const res = await api.channels.list(params);
-      setChannels(res.channels || []);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
+  const openSite = (url: string, name: string) => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') window.open(url, '_blank');
+      return;
     }
+    router.push({ pathname: '/sports-browser', params: { url, name } });
   };
-
-  useEffect(() => { load(category); }, [category]);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Live TV</Text>
-        <View style={styles.dot} />
-      </View>
+      <ScrollView showsVerticalScrollIndicator={false}>
 
-      <FlatList
-        horizontal
-        data={CATS}
-        keyExtractor={i => i.value}
-        renderItem={({ item }) => (
-          <CategoryPill label={item.label} value={item.value} selected={category === item.value} onPress={() => setCategory(item.value)} />
-        )}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.pills}
-      />
+        <View style={styles.header}>
+          <Text style={styles.title}>Live Sports</Text>
+          <Text style={styles.sub}>Browse live matches from top streaming sites</Text>
+        </View>
 
-      {loading ? (
-        <ActivityIndicator color={theme.colors.accent} style={{ marginTop: 40 }} />
-      ) : (
-        <FlatList
-          data={channels}
-          keyExtractor={i => i.id}
-          numColumns={2}
-          contentContainerStyle={styles.grid}
-          columnWrapperStyle={styles.row}
-          renderItem={({ item }) => (
-            <View style={styles.cardWrap}>
-              <ChannelCard channel={item} onPress={() => router.push(`/player/${item.id}`)} />
-            </View>
-          )}
-          ListEmptyComponent={<Text style={styles.empty}>No live channels found</Text>}
-        />
-      )}
+        <View style={styles.tip}>
+          <Text style={styles.tipText}>
+            ◉  Streams are auto-detected — when a match loads the player launches automatically
+          </Text>
+        </View>
+
+        <View style={styles.grid}>
+          {SPORTS_SITES.map(site => (
+            <Pressable
+              key={site.url}
+              style={styles.card}
+              onPress={() => openSite(site.url, site.name)}
+            >
+              <View style={[styles.iconWrap, { backgroundColor: site.color + '22', borderColor: site.color + '55' }]}>
+                <Text style={styles.icon}>{site.icon}</Text>
+              </View>
+              <Text style={styles.cardName}>{site.name}</Text>
+              <Text style={styles.cardUrl} numberOfLines={1}>
+                {site.url.replace(/https?:\/\//, '').replace(/\/$/, '')}
+              </Text>
+              <View style={[styles.liveChip, { borderColor: site.color }]}>
+                <View style={[styles.liveDot, { backgroundColor: site.color }]} />
+                <Text style={[styles.liveText, { color: site.color }]}>LIVE</Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={{ height: 30 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.colors.background },
-  header: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.md },
-  title: { color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: '800', marginRight: theme.spacing.sm },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.live },
-  pills: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.md },
-  grid: { padding: theme.spacing.md },
-  row: { justifyContent: 'space-between', marginBottom: theme.spacing.sm },
-  cardWrap: { flex: 1, marginHorizontal: 4 },
-  empty: { color: theme.colors.textMuted, textAlign: 'center', marginTop: 40, fontSize: theme.fontSize.md },
+  header: { padding: theme.spacing.md, paddingBottom: 0 },
+  title: { color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: '800' },
+  sub: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, marginTop: 2 },
+  tip: {
+    margin: theme.spacing.md,
+    backgroundColor: theme.colors.accent + '11',
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.accent + '33',
+    padding: theme.spacing.sm,
+  },
+  tipText: { color: theme.colors.accent, fontSize: theme.fontSize.xs, lineHeight: 18 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: theme.spacing.md, gap: 12 },
+  card: {
+    width: '47%',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.md,
+  },
+  iconWrap: { width: 44, height: 44, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  icon: { fontSize: 22 },
+  cardName: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: '700', marginBottom: 2 },
+  cardUrl: { color: theme.colors.textMuted, fontSize: 10, marginBottom: 10 },
+  liveChip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', borderWidth: 1, borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 3, gap: 5 },
+  liveDot: { width: 6, height: 6, borderRadius: 3 },
+  liveText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
 });

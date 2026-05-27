@@ -37,8 +37,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="live"
         options={{
-          title: 'Live',
-          tabBarIcon: ({ focused }) => <TabIcon symbol="◉" focused={focused} />,
+          title: 'Sports',
+          tabBarIcon: ({ focused }) => <TabIcon symbol="⚽" focused={focused} />,
         }}
       />
       <Tabs.Screen
