@@ -20,6 +20,7 @@ export default function PlayerScreen() {
   const [channel, setChannel] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [streamError, setStreamError] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [upgradeInfo, setUpgradeInfo] = useState({ used: 0, limit: 3 });
   const [isFav, setIsFav] = useState(false);
@@ -74,13 +75,22 @@ export default function PlayerScreen() {
     );
   }
 
-  if (error) {
+  if (error || streamError) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>Go Back</Text>
-        </Pressable>
+        <Text style={styles.errorIcon}>📡</Text>
+        <Text style={styles.errorTitle}>Stream Unavailable</Text>
+        <Text style={styles.errorSub}>
+          {channel?.name ? `${channel.name} is not streaming right now.` : 'This stream could not be loaded.'}
+        </Text>
+        <View style={styles.errorBtns}>
+          <Pressable style={styles.retryBtn} onPress={() => { setStreamError(false); setError(''); loadChannel(); }}>
+            <Text style={styles.retryBtnText}>↺ Retry</Text>
+          </Pressable>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.backBtnText}>‹ Back</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -89,7 +99,7 @@ export default function PlayerScreen() {
     <View style={styles.root}>
       {/* Video — web uses hls.js, native uses expo-video */}
       {streamUrl && isWeb && (
-        <WebVideoPlayer uri={streamUrl} style={StyleSheet.absoluteFill} />
+        <WebVideoPlayer uri={streamUrl} style={StyleSheet.absoluteFill} onError={() => setStreamError(true)} />
       )}
       {streamUrl && !isWeb && (
         <VideoView
@@ -165,9 +175,14 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
   center: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
   loadingText: { color: theme.colors.textSecondary, marginTop: theme.spacing.md },
-  errorText: { color: theme.colors.error, fontSize: theme.fontSize.md, marginBottom: theme.spacing.md },
-  backBtn: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.full, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
-  backBtnText: { color: theme.colors.text, fontWeight: '600' },
+  errorIcon: { fontSize: 48, marginBottom: 16 },
+  errorTitle: { color: '#fff', fontSize: theme.fontSize.xl, fontWeight: '800', marginBottom: 8 },
+  errorSub: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, textAlign: 'center', marginBottom: 28, paddingHorizontal: 32 },
+  errorBtns: { flexDirection: 'row', gap: 12 },
+  retryBtn: { backgroundColor: theme.colors.accent, borderRadius: theme.radius.full, paddingHorizontal: 24, paddingVertical: 10 },
+  retryBtnText: { color: '#000', fontWeight: '800', fontSize: theme.fontSize.sm },
+  backBtn: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.full, paddingHorizontal: 24, paddingVertical: 10, borderWidth: 1, borderColor: theme.colors.border },
+  backBtnText: { color: theme.colors.text, fontWeight: '600', fontSize: theme.fontSize.sm },
   overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between' },
   webTopBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', padding: theme.spacing.md, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10 },
   topBar: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.md, backgroundColor: 'rgba(0,0,0,0.4)' },

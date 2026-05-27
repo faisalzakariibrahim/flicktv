@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 interface Props {
   uri: string;
   style?: object;
+  onError?: () => void;
 }
 
 // Injected once into the document head
@@ -41,7 +42,7 @@ function injectVideoJsCSS() {
   document.head.appendChild(style);
 }
 
-export function WebVideoPlayer({ uri, style }: Props) {
+export function WebVideoPlayer({ uri, style, onError }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
 
@@ -74,12 +75,17 @@ export function WebVideoPlayer({ uri, style }: Props) {
             overrideNative: true,
             enableLowInitialPlaylist: true,
             smoothQualityChange: true,
+            handleManifestRedirects: true,
           },
           nativeVideoTracks: false,
           nativeAudioTracks: false,
           nativeTextTracks: false,
         },
         sources: [{ src: uri, type: uri.includes('.m3u8') ? 'application/x-mpegURL' : 'video/mp4' }],
+      });
+
+      player.on('error', () => {
+        onError?.();
       });
 
       playerRef.current = player;
