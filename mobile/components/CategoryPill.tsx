@@ -11,7 +11,7 @@ interface Props {
 export function CategoryPill({ label, selected, onPress }: Props) {
   return (
     <Pressable
-      style={[styles.pill, selected && styles.pillSelected]}
+      style={({ pressed }) => [styles.pill, selected && styles.pillSelected, pressed && styles.pressed]}
       onPress={onPress}
     >
       <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
@@ -21,10 +21,10 @@ export function CategoryPill({ label, selected, onPress }: Props) {
 
 const styles = StyleSheet.create({
   pill: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.xs + 2,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: theme.radius.full,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: theme.colors.border,
     marginRight: theme.spacing.sm,
@@ -33,10 +33,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.accent,
     borderColor: theme.colors.accent,
   },
+  pressed: { opacity: 0.7 },
   label: {
     color: theme.colors.textSecondary,
     fontSize: theme.fontSize.sm,
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
-  labelSelected: { color: '#000' },
+  labelSelected: { color: '#000', fontWeight: '700' },
 });
