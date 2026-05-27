@@ -10,6 +10,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import compression from 'compression';
 import { createClient } from '@supabase/supabase-js';
+import { WebSocket } from 'ws';
 import Anthropic from '@anthropic-ai/sdk';
 import fetch from 'node-fetch';
 import { parseM3U } from './parsers/m3uParser.js';
@@ -30,7 +31,8 @@ const FREE_STREAM_LIMIT = parseInt(process.env.FREE_STREAM_LIMIT || '3');
 // ─── Supabase ─────────────────────────────────────────────────────────────────
 export const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
+  process.env.SUPABASE_SERVICE_KEY,
+  { realtime: { transport: WebSocket } }
 );
 
 // ─── Anthropic ────────────────────────────────────────────────────────────────
