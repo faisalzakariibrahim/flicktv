@@ -90,8 +90,18 @@ export function WebVideoPlayer({ uri, style, onError }: Props) {
         sources: [{ src: uri, type }],
       });
 
-      player.on('error', () => {
-        onError?.();
+      player.on('error', () => { onError?.(); });
+
+      // Timeout: if no playback starts within 15s, treat as error
+      let startupTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+        startupTimer = null;
+        if (!player.paused() === false && player.readyState() < 3) {
+          onError?.();
+        }
+      }, 15000);
+
+      player.on('playing', () => {
+        if (startupTimer) { clearTimeout(startupTimer); startupTimer = null; }
       });
 
       playerRef.current = player;
@@ -104,6 +114,7 @@ export function WebVideoPlayer({ uri, style, onError }: Props) {
         playerRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Source change without re-mounting the player
