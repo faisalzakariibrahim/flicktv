@@ -1,9 +1,9 @@
 import { supabase } from './supabase';
 
-// For production, set this to your Railway URL
+const RAILWAY_URL = 'https://flicktv-production.up.railway.app';
 const API_BASE = typeof window !== 'undefined' && window.location.hostname === 'localhost'
   ? 'http://localhost:3001'
-  : 'http://192.168.1.158:3001';
+  : RAILWAY_URL;
 
 export class UpgradeRequiredError extends Error {
   streamsUsed: number;
