@@ -12,6 +12,7 @@ const SPORTS_SITES = [
   { name: 'Koora CDF',      url: 'https://koora.cfd/',             icon: '🎯', color: '#8b5cf6' },
   { name: 'TV96',           url: 'https://tv96.cfd/',              icon: '📡', color: '#ec4899' },
   { name: 'Stream2Watch',   url: 'https://www.stream2watch.com/',  icon: '▶',  color: '#06b6d4' },
+  { name: 'Camel TV',       url: 'https://www.camel1.tv/',         icon: '🐪', color: '#f97316' },
 ];
 
 export default function LiveSportsScreen() {
