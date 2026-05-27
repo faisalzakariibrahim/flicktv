@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEvent } from 'expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { UpgradeModal } from '../../components/UpgradeModal';
+import { WebVideoPlayer } from '../../components/WebVideoPlayer';
 import { theme } from '../../constants/theme';
 import { api, UpgradeRequiredError } from '../../lib/api';
 import { useChannelsStore } from '../../stores/channelsStore';
+
+const isWeb = Platform.OS === 'web';
 
 export default function PlayerScreen() {
   const { channelId } = useLocalSearchParams<{ channelId: string }>();
@@ -23,8 +26,8 @@ export default function PlayerScreen() {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
 
   const player = useVideoPlayer(
-    streamUrl ? { uri: streamUrl, contentType: streamUrl.includes('.m3u8') ? 'hls' : undefined } : null,
-    p => { if (streamUrl) p.play(); }
+    !isWeb && streamUrl ? { uri: streamUrl, contentType: streamUrl.includes('.m3u8') ? 'hls' : undefined } : null,
+    p => { if (!isWeb && streamUrl) p.play(); }
   );
 
   const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
@@ -84,8 +87,11 @@ export default function PlayerScreen() {
 
   return (
     <View style={styles.root}>
-      {/* Video */}
-      {streamUrl && (
+      {/* Video — web uses hls.js, native uses expo-video */}
+      {streamUrl && isWeb && (
+        <WebVideoPlayer uri={streamUrl} style={StyleSheet.absoluteFill} />
+      )}
+      {streamUrl && !isWeb && (
         <VideoView
           player={player}
           style={StyleSheet.absoluteFill}
@@ -95,7 +101,8 @@ export default function PlayerScreen() {
         />
       )}
 
-      {/* Overlay controls */}
+      {/* Overlay controls — only on native (web uses native <video> controls) */}
+      {!isWeb && (
       <SafeAreaView style={styles.overlay} edges={['top', 'bottom']}>
         {/* Top bar */}
         <View style={styles.topBar}>
@@ -127,6 +134,22 @@ export default function PlayerScreen() {
           {channel?.category && <Text style={styles.channelCat}>{channel.category}</Text>}
         </View>
       </SafeAreaView>
+      )}
+
+      {/* Web: back button overlay */}
+      {isWeb && (
+        <View style={styles.webTopBar}>
+          <Pressable style={styles.iconBtn} onPress={() => router.back()}>
+            <Text style={styles.iconBtnText}>‹ Back</Text>
+          </Pressable>
+          <View style={{ flex: 1 }} />
+          <Pressable style={styles.iconBtn} onPress={handleFavorite}>
+            <Text style={[styles.iconBtnText, { color: isFav ? theme.colors.accent : '#fff' }]}>
+              {isFav ? '♥' : '♡'}
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
       <UpgradeModal
         visible={showUpgrade}
@@ -146,6 +169,7 @@ const styles = StyleSheet.create({
   backBtn: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.full, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
   backBtnText: { color: theme.colors.text, fontWeight: '600' },
   overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between' },
+  webTopBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', padding: theme.spacing.md, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10 },
   topBar: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.md, backgroundColor: 'rgba(0,0,0,0.4)' },
   iconBtn: { padding: theme.spacing.sm },
   iconBtnText: { color: '#fff', fontSize: theme.fontSize.lg, fontWeight: '600' },

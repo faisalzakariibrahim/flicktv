@@ -1,7 +1,9 @@
 import { supabase } from './supabase';
 
 // For production, set this to your Railway URL
-const API_BASE = 'http://192.168.1.158:3001';
+const API_BASE = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+  ? 'http://localhost:3001'
+  : 'http://192.168.1.158:3001';
 
 export class UpgradeRequiredError extends Error {
   streamsUsed: number;
@@ -74,6 +76,9 @@ export const api = {
     proxyUrl: async (streamUrl: string) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
+      // On web, load streams directly — the proxy only rewrites the manifest
+      // not the HLS segment URLs, causing CORS failures on the segments.
+      if (typeof window !== 'undefined') return streamUrl;
       return `${API_BASE}/api/proxy/stream?url=${encodeURIComponent(streamUrl)}&token=${session.access_token}`;
     },
     health: (url: string) =>
