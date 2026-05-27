@@ -70,6 +70,15 @@ export const api = {
     voiceSearch: (transcript: string) =>
       request<any>('/api/ai/voice-search', { method: 'POST', body: JSON.stringify({ transcript }) }),
   },
+  sports: {
+    schedule: (sport?: string, league?: string) => {
+      const q = new URLSearchParams();
+      if (sport) q.set('sport', sport);
+      if (league) q.set('league', league);
+      return request<any>(`/api/sports/schedule?${q}`);
+    },
+    leagues: () => request<any>('/api/sports/leagues'),
+  },
   stream: {
     proxyUrl: async (streamUrl: string) => {
       const { data: { session } } = await supabase.auth.getSession();

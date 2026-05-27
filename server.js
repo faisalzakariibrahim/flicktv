@@ -21,6 +21,7 @@ import channelRouter from './routes/channels.js';
 import userRouter from './routes/users.js';
 import aiRouter from './ai.js';
 import adminRouter from './routes/admin.js';
+import sportsRouter from './routes/sports.js';
 import { verifyToken, requireAuth } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
 
@@ -77,6 +78,7 @@ app.use('/api/channels', verifyToken, channelRouter);  // soft auth — public b
 app.use('/api/users', requireAuth, userRouter);
 app.use('/api/ai', requireAuth, aiRouter);
 app.use('/api/admin', requireAuth, adminRouter);
+app.use('/api/sports', sportsRouter);  // public — no auth needed
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
