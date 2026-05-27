@@ -10,14 +10,10 @@ import fetch from 'node-fetch';
 import { parseM3U } from '../parsers/m3uParser.js';
 import { logger } from '../utils/logger.js';
 
-const MIN_CHANNELS = 500;
+const MIN_CHANNELS = 50;
 
 // Adult content groups to skip
 const ADULT_KEYWORDS = ['adult', 'xxx', '18+', 'erotic', 'porn', 'sex'];
-
-const SEED_SOURCES = [
-  'https://iptv-org.github.io/iptv/index.m3u',
-];
 
 export async function seedChannelsIfNeeded() {
   const supabase = createClient(
@@ -42,17 +38,25 @@ export async function seedChannelsIfNeeded() {
       return;
     }
 
-    logger.info(`Seed: only ${count} system channels — seeding from iptv-org…`);
-
-    for (const url of SEED_SOURCES) {
-      try {
-        await seedFromUrl(supabase, url);
-      } catch (err) {
-        logger.error(`Seed source failed: ${url}`, err);
-      }
-    }
+    logger.info(`Seed: only ${count} system channels — seeding from verified list…`);
+    await seedFromVerifiedList(supabase);
   } catch (err) {
     logger.error('seedChannelsIfNeeded error', err);
+  }
+}
+
+async function seedFromVerifiedList(supabase) {
+  try {
+    const { default: { createRequire } } = await import('module');
+    const require = createRequire(import.meta.url);
+    const channels = require('./working_channels.json');
+    const { error } = await supabase.from('channels').insert(
+      channels.map(ch => ({ ...ch, user_id: null, is_working: true }))
+    );
+    if (error) logger.error('Seed insert error', error.message);
+    else logger.info(`Seeded ${channels.length} verified channels`);
+  } catch (err) {
+    logger.error('seedFromVerifiedList failed', err);
   }
 }
 
