@@ -27,6 +27,9 @@ import { logger } from './utils/logger.js';
 import { seedChannelsIfNeeded } from './scripts/seedChannels.js';
 
 const app = express();
+// Trust Railway/Vercel load balancer so req.protocol reflects X-Forwarded-Proto (https)
+// Without this, rewritten HLS segment URLs use http:// and get blocked as mixed content
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 const FREE_STREAM_LIMIT = parseInt(process.env.FREE_STREAM_LIMIT || '3');
 
