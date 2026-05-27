@@ -81,9 +81,14 @@ export const api = {
   },
   stream: {
     proxyUrl: async (streamUrl: string) => {
+      // HTTPS streams from CDNs (Akamai, CloudFront, etc.) send Access-Control-Allow-Origin: *
+      // so the browser can load them directly — no proxy needed, much faster.
+      // Only proxy HTTP streams to avoid mixed-content blocking on HTTPS pages.
+      if (typeof window !== 'undefined' && streamUrl.startsWith('https://')) {
+        return streamUrl;
+      }
       const { data: { session } } = await supabase.auth.getSession();
       const tokenParam = session ? `&token=${session.access_token}` : '';
-      // Always proxy — handles CORS and HTTP→HTTPS mixed-content on web
       return `${API_BASE}/api/proxy/stream?url=${encodeURIComponent(streamUrl)}${tokenParam}`;
     },
     health: (url: string) =>

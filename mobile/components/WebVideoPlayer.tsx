@@ -64,24 +64,30 @@ export function WebVideoPlayer({ uri, style, onError }: Props) {
       videoEl.setAttribute('playsinline', '');
       containerRef.current.appendChild(videoEl);
 
+      const type = uri.includes('.m3u8') ? 'application/x-mpegURL' : 'video/mp4';
       const player = videojs(videoEl, {
         autoplay: true,
         controls: true,
         fluid: false,
         fill: true,
         preload: 'auto',
+        liveui: true,
         html5: {
           vhs: {
             overrideNative: true,
             enableLowInitialPlaylist: true,
             smoothQualityChange: true,
             handleManifestRedirects: true,
+            experimentalBufferBasedABR: true,
+            maxPlaylistRetries: 3,
+            // Live stream: start at live edge, not beginning
+            liveEdgeOffset: 3,
           },
           nativeVideoTracks: false,
           nativeAudioTracks: false,
           nativeTextTracks: false,
         },
-        sources: [{ src: uri, type: uri.includes('.m3u8') ? 'application/x-mpegURL' : 'video/mp4' }],
+        sources: [{ src: uri, type }],
       });
 
       player.on('error', () => {
