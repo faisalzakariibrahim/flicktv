@@ -82,8 +82,8 @@ export const api = {
   stream: {
     proxyUrl: async (streamUrl: string) => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (typeof window !== 'undefined') return streamUrl;
       const tokenParam = session ? `&token=${session.access_token}` : '';
+      // Always proxy — handles CORS and HTTP→HTTPS mixed-content on web
       return `${API_BASE}/api/proxy/stream?url=${encodeURIComponent(streamUrl)}${tokenParam}`;
     },
     health: (url: string) =>

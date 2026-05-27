@@ -86,25 +86,84 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() });
 });
 
-// ─── Stream Proxy (CORS bypass for HLS) ──────────────────────────────────────
-app.get('/api/proxy/stream', verifyToken, async (req, res) => {
+// ─── Stream Proxy (CORS bypass + HLS manifest rewriting) ─────────────────────
+app.get('/api/proxy/stream', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'URL required' });
 
   try {
     const decoded = decodeURIComponent(url);
-    const response = await fetch(decoded, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlickTV/1.0)' },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-    res.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
+    const response = await fetch(decoded, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Referer': new URL(decoded).origin + '/',
+        'Origin': new URL(decoded).origin,
+      },
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Upstream ${response.status}` });
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    const isHLS = contentType.includes('mpegurl') || decoded.includes('.m3u8');
+
     res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Headers', 'Range');
+
+    if (isHLS) {
+      // Rewrite manifest so all segment/sub-playlist URLs go through this proxy
+      const text = await response.text();
+      const rewritten = rewriteM3U8(text, decoded, req);
+      res.set('Content-Type', 'application/vnd.apple.mpegurl');
+      return res.send(rewritten);
+    }
+
+    res.set('Content-Type', contentType || 'video/mp2t');
     response.body.pipe(res);
   } catch (err) {
     logger.error('Stream proxy error', err);
     res.status(502).json({ error: 'Stream unavailable' });
   }
 });
+
+function rewriteM3U8(content, manifestUrl, req) {
+  const base = new URL(manifestUrl);
+  const proxyBase = `${req.protocol}://${req.get('host')}/api/proxy/stream?url=`;
+
+  return content.split('\n').map(line => {
+    const trimmed = line.trim();
+    // Skip empty lines and pure directive lines (but NOT lines with URIs in them)
+    if (!trimmed || (trimmed.startsWith('#') && !trimmed.includes('URI="'))) return line;
+
+    // Rewrite URI="..." attributes inside tags (e.g. #EXT-X-KEY, #EXT-X-MAP)
+    if (trimmed.startsWith('#') && trimmed.includes('URI="')) {
+      return trimmed.replace(/URI="([^"]+)"/g, (_, uri) => {
+        return `URI="${proxyBase}${encodeURIComponent(resolveUrl(uri, base))}"`;
+      });
+    }
+
+    // Segment / sub-playlist URL lines
+    if (!trimmed.startsWith('#')) {
+      const absolute = resolveUrl(trimmed, base);
+      return `${proxyBase}${encodeURIComponent(absolute)}`;
+    }
+
+    return line;
+  }).join('\n');
+}
+
+function resolveUrl(url, base) {
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('//')) return `${base.protocol}${url}`;
+  if (url.startsWith('/')) return `${base.protocol}//${base.host}${url}`;
+  return new URL(url, base.href).href;
+}
 
 // ─── M3U Parse Endpoint ───────────────────────────────────────────────────────
 app.post('/api/parse/m3u', async (req, res) => {
