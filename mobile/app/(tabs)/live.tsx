@@ -3,16 +3,14 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 
+// Only sites that returned HTTP 200 in live testing
 const SPORTS_SITES = [
   { name: 'Yalla Shoot',    url: 'https://yalla-shoot-new.com/',   icon: '⚽', color: '#22c55e' },
-  { name: 'Yalla Shoot SX', url: 'https://yallashoot.sx/',         icon: '⚽', color: '#16a34a' },
   { name: 'Koora Live Hub', url: 'https://kooralivehub.com/',      icon: '🏆', color: '#f59e0b' },
-  { name: 'Koora Online',   url: 'https://kooooraonline.com/',     icon: '🏆', color: '#d97706' },
   { name: 'Live Koora',     url: 'https://livekoora.today/',       icon: '📺', color: '#3b82f6' },
   { name: 'Koora TV',       url: 'https://kooratv.life/',          icon: '📺', color: '#2563eb' },
   { name: 'Koora CDF',      url: 'https://koora.cfd/',             icon: '🎯', color: '#8b5cf6' },
   { name: 'TV96',           url: 'https://tv96.cfd/',              icon: '📡', color: '#ec4899' },
-  { name: 'Live TV SX',     url: 'https://live-tv.sx/',            icon: '📡', color: '#f43f5e' },
   { name: 'Stream2Watch',   url: 'https://www.stream2watch.com/',  icon: '▶',  color: '#06b6d4' },
 ];
 
