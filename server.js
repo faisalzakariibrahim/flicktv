@@ -53,6 +53,17 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
+  // Exclude stream proxy — HLS playback makes a request every ~4s per viewer
+  skip: (req) => req.path.startsWith('/proxy/'),
+});
+
+// Separate generous limiter for the stream proxy
+const proxyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3000, // ~50 req/s — allows many simultaneous viewers with continuous HLS
+  standardHeaders: false,
+  legacyHeaders: false,
+  message: { error: 'Too many requests' },
 });
 
 const aiLimiter = rateLimit({
@@ -62,6 +73,7 @@ const aiLimiter = rateLimit({
 });
 
 app.use('/api/', globalLimiter);
+app.use('/api/', proxyLimiter);
 app.use('/api/ai/', aiLimiter);
 
 app.use((req, _res, next) => {
@@ -91,7 +103,7 @@ app.get('/api/proxy/stream', async (req, res) => {
   try {
     const decoded = decodeURIComponent(url);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
     const response = await fetch(decoded, {
       signal: controller.signal,

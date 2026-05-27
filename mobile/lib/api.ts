@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
 const RAILWAY_URL = 'https://flicktv-production.up.railway.app';
@@ -81,10 +82,10 @@ export const api = {
   },
   stream: {
     proxyUrl: async (streamUrl: string) => {
-      // HTTPS streams from CDNs (Akamai, CloudFront, etc.) send Access-Control-Allow-Origin: *
-      // so the browser can load them directly — no proxy needed, much faster.
-      // Only proxy HTTP streams to avoid mixed-content blocking on HTTPS pages.
-      if (typeof window !== 'undefined' && streamUrl.startsWith('https://')) {
+      // Native (iOS/Android): no CORS restrictions, play streams directly.
+      // Web: always proxy — not all HTTPS CDNs send Access-Control-Allow-Origin: *,
+      // so direct loads cause silent CORS failures (black screen / infinite spinner).
+      if (Platform.OS !== 'web') {
         return streamUrl;
       }
       const { data: { session } } = await supabase.auth.getSession();
