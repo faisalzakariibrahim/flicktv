@@ -24,6 +24,7 @@ import adminRouter from './routes/admin.js';
 import sportsRouter from './routes/sports.js';
 import { verifyToken, requireAuth } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
+import { seedChannelsIfNeeded } from './scripts/seedChannels.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -201,6 +202,8 @@ app.use((err, _req, res, _next) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   logger.info(`FlickTV AI backend running on port ${PORT}`);
+  // Ensure system channels always exist — runs in background, non-blocking
+  seedChannelsIfNeeded().catch(err => logger.error('Seed error', err));
 });
 
 export default app;

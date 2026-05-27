@@ -17,8 +17,13 @@ router.get('/', async (req, res) => {
       .range(offset, offset + parseInt(limit) - 1)
       .order('name');
 
-    // If authenticated, scope to their playlists only
-    if (req.user) query = query.eq('user_id', req.user.id);
+    // System channels (user_id IS NULL) are always visible.
+    // Authenticated users also see their own private channels.
+    if (req.user) {
+      query = query.or(`user_id.is.null,user_id.eq.${req.user.id}`);
+    } else {
+      query = query.is('user_id', null);
+    }
 
     if (search) query = query.ilike('name', `%${search}%`);
     if (category) query = query.eq('category', category);
@@ -91,7 +96,11 @@ router.get('/:id', async (req, res) => {
       .select('*, playlists(name, type)')
       .eq('id', req.params.id);
 
-    if (req.user) query = query.eq('user_id', req.user.id);
+    if (req.user) {
+      query = query.or(`user_id.is.null,user_id.eq.${req.user.id}`);
+    } else {
+      query = query.is('user_id', null);
+    }
 
     const { data, error } = await query.single();
     if (error || !data) return res.status(404).json({ error: 'Channel not found' });
