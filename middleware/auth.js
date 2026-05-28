@@ -45,6 +45,16 @@ export async function requireAuth(req, res, next) {
 
 // Must be used after requireAuth.
 export async function requireAdmin(req, res, next) {
+  // Check password-based auth first (for admin dashboard)
+  const pwd = req.headers['x-admin-password'] || req.query.admin_password;
+  if (pwd && pwd === process.env.ADMIN_PASSWORD) {
+    req.user = { role: 'admin' };
+    return next();
+  }
+
+  // Fall back to JWT-based admin check
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+
   try {
     const { data, error } = await supabase
       .from('users')
@@ -58,4 +68,14 @@ export async function requireAdmin(req, res, next) {
     logger.error('Admin check failed', err);
     res.status(500).json({ error: 'Authorization check failed' });
   }
+}
+
+// Password-only auth for admin dashboard (no JWT required)
+export function requireAdminPassword(req, res, next) {
+  const pwd = req.headers['x-admin-password'] || req.query.admin_password;
+  if (pwd && pwd === process.env.ADMIN_PASSWORD) {
+    req.user = { role: 'admin' };
+    return next();
+  }
+  return res.status(401).json({ error: 'Invalid admin password' });
 }

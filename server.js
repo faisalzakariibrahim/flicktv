@@ -25,6 +25,8 @@ import sportsRouter from './routes/sports.js';
 import { verifyToken, requireAuth } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
 import { seedChannelsIfNeeded } from './scripts/seedChannels.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 // Trust Railway/Vercel load balancer so req.protocol reflects X-Forwarded-Proto (https)
@@ -84,13 +86,18 @@ app.use((req, _res, next) => {
   next();
 });
 
+// ─── Admin Dashboard (static) ─────────────────────────────────────────────────
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.use('/admin', express.static(path.join(__dirname, 'backend', 'public'), { index: 'admin.html' }));
+app.get('/admin', (_req, res) => res.redirect('/admin/'));
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
 app.use('/api/playlists', verifyToken, playlistRouter);
 app.use('/api/channels', verifyToken, channelRouter);  // soft auth — public browsing OK
 app.use('/api/users', requireAuth, userRouter);
 app.use('/api/ai', requireAuth, aiRouter);
-app.use('/api/admin', requireAuth, adminRouter);
+app.use('/api/admin', adminRouter);
 app.use('/api/sports', sportsRouter);  // public — no auth needed
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
