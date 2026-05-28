@@ -20,8 +20,14 @@ import channelRouter from './routes/channels.js';
 import userRouter from './routes/users.js';
 import aiRouter from './routes/ai.js';
 import adminRouter from './routes/admin.js';
+import { startStreamHealthWorker } from './workers/streamHealthWorker.js';
+import { startDailyChannelScan } from './workers/dailyScanWorker.js';
 import { verifyToken } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -68,6 +74,9 @@ app.use((req, _res, next) => {
   logger.info(`${req.method} ${req.path}`, { ip: req.ip, ua: req.get('user-agent') });
   next();
 });
+
+// ─── Admin Dashboard (static) ─────────────────────────────────────────────────
+app.use('/admin', express.static(path.join(__dirname, '..', 'public'), { index: 'admin.html' }));
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
@@ -214,5 +223,9 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
   logger.info(`🚀 FlickTV AI Backend running on port ${PORT}`);
 });
+
+// ─── Background Workers ───────────────────────────────────────────────────────
+startStreamHealthWorker();
+startDailyChannelScan();
 
 export default app;

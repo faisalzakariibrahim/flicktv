@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlickTV Admin Dashboard</title>
+<style>
+  :root {
+    --bg: #0f0f0f; --surface: #1a1a1a; --border: #2a2a2a;
+    --text: #e5e5e5; --muted: #888; --accent: #6366f1;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* Login */
+  #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .login-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 40px; width: 100%; max-width: 400px; }
+  .login-box h1 { font-size: 24px; margin-bottom: 8px; }
+  .login-box p { color: var(--muted); margin-bottom: 24px; }
+  .login-box input { width: 100%; padding: 12px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 16px; margin-bottom: 16px; outline: none; }
+  .login-box input:focus { border-color: var(--accent); }
+  .login-box button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
+  .login-box button:hover { opacity: 0.9; }
+
+  /* Layout */
+  #app { display: none; }
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 20px; }
+  .header .tabs { display: flex; gap: 4px; }
+  .header .tab { padding: 8px 16px; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 14px; }
+  .header .tab.active { background: var(--accent); color: white; }
+  .header .tab:hover:not(.active) { background: var(--border); }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  /* Stats */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .stat-card .label { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; }
+  .stat-card .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* Toolbar */
+  .toolbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .toolbar input, .toolbar select { padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; outline: none; }
+  .toolbar input { flex: 1; min-width: 200px; }
+  .toolbar input:focus { border-color: var(--accent); }
+  .toolbar button { padding: 8px 16px; border-radius: 6px; border: none; font-size: 14px; cursor: pointer; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-danger { background: var(--red); color: white; }
+  .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  .btn-success { background: var(--green); color: white; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+  /* Table */
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 12px 16px; font-size: 12px; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--bg); }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  tr:hover { background: rgba(255,255,255,0.02); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .badge-blue { background: rgba(99,102,241,0.15); color: var(--accent); }
+  .truncate { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Pagination */
+  .pagination { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--border); }
+  .pagination .info { color: var(--muted); font-size: 13px; }
+  .pagination .btns { display: flex; gap: 4px; }
+  .pagination button { padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); cursor: pointer; font-size: 13px; }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pagination button.active { background: var(--accent); border-color: var(--accent); }
+
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+  .modal h2 { margin-bottom: 16px; font-size: 18px; }
+  .modal label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; margin-top: 12px; }
+  .modal input, .modal select { width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; outline: none; }
+  .modal input:focus { border-color: var(--accent); }
+  .modal .actions { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
+
+  /* Sources list */
+  .source-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+  .source-card .info { flex: 1; min-width: 0; }
+  .source-card .name { font-weight: 600; margin-bottom: 2px; }
+  .source-card .url { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .source-card .actions { display: flex; gap: 4px; margin-left: 12px; flex-shrink: 0; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px; font-size: 14px; z-index: 200; animation: slideIn 0.3s ease; }
+  .toast.success { background: var(--green); color: white; }
+  .toast.error { background: var(--red); color: white; }
+  @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  /* Scan result */
+  .scan-result { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 12px; font-size: 13px; white-space: pre-wrap; font-family: monospace; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>FlickTV Admin</h1>
+    <p>Enter admin password to continue</p>
+    <input type="password" id="pwd-input" placeholder="Admin password" autofocus>
+    <button onclick="login()">Login</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="header">
+    <h1>FlickTV Admin Dashboard</h1>
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('channels', this)">Channels</div>
+      <div class="tab" onclick="switchTab('sources', this)">Scan Sources</div>
+      <div class="tab" onclick="switchTab('scan', this)">Run Scan</div>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- CHANNELS TAB -->
+    <div id="tab-channels">
+      <div class="stats" id="stats-bar"></div>
+      <div class="toolbar">
+        <input type="text" id="search-input" placeholder="Search channels..." oninput="debounceSearch()">
+        <select id="filter-category" onchange="loadChannels()">
+          <option value="">All Categories</option>
+          <option value="news">News</option><option value="sports">Sports</option>
+          <option value="movies">Movies</option><option value="kids">Kids</option>
+          <option value="music">Music</option><option value="documentary">Documentary</option>
+          <option value="religious">Religious</option><option value="general">General</option>
+        </select>
+        <select id="filter-working" onchange="loadChannels()">
+          <option value="">All Status</option>
+          <option value="true">Working</option>
+          <option value="false">Not Working</option>
+        </select>
+        <button class="btn-primary" onclick="openAddChannelModal()">+ Add Channel</button>
+        <button class="btn-danger" id="bulk-delete-btn" onclick="bulkDelete()" style="display:none">Delete Selected</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="select-all" onchange="toggleSelectAll()"></th>
+              <th>Name</th>
+              <th>Category</th>
+              <th>Country</th>
+              <th>Status</th>
+              <th>Stream URL</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="channels-tbody"></tbody>
+        </table>
+        <div class="pagination" id="pagination"></div>
+      </div>
+    </div>
+
+    <!-- SOURCES TAB -->
+    <div id="tab-sources" class="hidden">
+      <div class="toolbar">
+        <button class="btn-primary" onclick="openAddSourceModal()">+ Add Scan Source</button>
+      </div>
+      <div id="sources-list"></div>
+    </div>
+
+    <!-- SCAN TAB -->
+    <div id="tab-scan" class="hidden">
+      <div class="toolbar">
+        <button class="btn-success" onclick="runScan()">▶ Run Full Scan</button>
+        <span style="color:var(--muted);font-size:13px">Scans all active sources and inserts new channels</span>
+      </div>
+      <div id="scan-result" class="scan-result hidden"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ADD/EDIT CHANNEL MODAL -->
+<div class="modal-overlay" id="channel-modal">
+  <div class="modal">
+    <h2 id="channel-modal-title">Add Channel</h2>
+    <input type="hidden" id="edit-channel-id">
+    <label>Name *</label>
+    <input type="text" id="edit-name" placeholder="Channel name">
+    <label>Stream URL *</label>
+    <input type="text" id="edit-url" placeholder="https://...">
+    <label>Logo URL</label>
+    <input type="text" id="edit-logo" placeholder="https://...">
+    <label>Category</label>
+    <select id="edit-category">
+      <option value="general">General</option>
+      <option value="news">News</option><option value="sports">Sports</option>
+      <option value="movies">Movies</option><option value="kids">Kids</option>
+      <option value="music">Music</option><option value="documentary">Documentary</option>
+      <option value="religious">Religious</option>
+    </select>
+    <label>Country (2-letter code)</label>
+    <input type="text" id="edit-country" placeholder="us" maxlength="2">
+    <label>Language</label>
+    <input type="text" id="edit-language" placeholder="eng" maxlength="3">
+    <label>Group Title</label>
+    <input type="text" id="edit-group" placeholder="Group name">
+    <div style="display:flex;gap:16px;margin-top:12px">
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="edit-hd"> HD</label>
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="edit-4k"> 4K</label>
+    </div>
+    <div class="actions">
+      <button class="btn-secondary" onclick="closeModal('channel-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveChannel()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD/EDIT SOURCE MODAL -->
+<div class="modal-overlay" id="source-modal">
+  <div class="modal">
+    <h2 id="source-modal-title">Add Scan Source</h2>
+    <input type="hidden" id="edit-source-id">
+    <label>Name *</label>
+    <input type="text" id="edit-source-name" placeholder="My M3U Source">
+    <label>URL *</label>
+    <input type="text" id="edit-source-url" placeholder="https://example.com/playlist.m3u">
+    <label>Type</label>
+    <select id="edit-source-type">
+      <option value="m3u">M3U Playlist</option>
+      <option value="xtream">Xtream Codes</option>
+      <option value="custom">Custom</option>
+    </select>
+    <label>Default Category (optional)</label>
+    <select id="edit-source-category">
+      <option value="">Inherit from playlist</option>
+      <option value="news">News</option><option value="sports">Sports</option>
+      <option value="movies">Movies</option><option value="kids">Kids</option>
+      <option value="music">Music</option><option value="general">General</option>
+    </select>
+    <label>Default Country (optional, 2-letter)</label>
+    <input type="text" id="edit-source-country" placeholder="us" maxlength="2">
+    <div class="actions">
+      <button class="btn-secondary" onclick="closeModal('source-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveSource()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api/admin';
+let token = '';
+let currentPage = 1;
+let totalPages = 1;
+let searchTimeout = null;
+let selectedIds = new Set();
+
+// ─── AUTH ───
+function login() {
+  const pwd = document.getElementById('pwd-input').value;
+  if (!pwd) return;
+  token = pwd;
+  // Test auth
+  fetch(`${API}/stats`, { headers: { 'x-admin-password': token } })
+    .then(r => {
+      if (r.ok) {
+        localStorage.setItem('flicktv_admin_pwd', pwd);
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+        loadStats();
+        loadChannels();
+      } else {
+        token = '';
+        toast('Invalid password', 'error');
+      }
+    })
+    .catch(() => { toast('Connection error', 'error'); });
+}
+
+// Auto-login if password saved
+const saved = localStorage.getItem('flicktv_admin_pwd');
+if (saved) {
+  token = saved;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  loadStats();
+  loadChannels();
+}
+
+// ─── TABS ───
+function switchTab(tab, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-channels').classList.toggle('hidden', tab !== 'channels');
+  document.getElementById('tab-sources').classList.toggle('hidden', tab !== 'sources');
+  document.getElementById('tab-scan').classList.toggle('hidden', tab !== 'scan');
+  if (tab === 'sources') loadSources();
+  if (tab === 'channels') loadStats();
+}
+
+// ─── STATS ───
+async function loadStats() {
+  try {
+    const r = await fetch(`${API}/stats`, { headers: { 'x-admin-password': token } });
+    const s = await r.json();
+    document.getElementById('stats-bar').innerHTML = `
+      <div class="stat-card"><div class="label">Total Channels</div><div class="value">${s.total.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="label">Working</div><div class="value" style="color:var(--green)">${s.working?.toLocaleString() || 0}</div></div>
+      <div class="stat-card"><div class="label">Not Working</div><div class="value" style="color:var(--red)">${s.notWorking?.toLocaleString() || 0}</div></div>
+      <div class="stat-card"><div class="label">Last Scan</div><div class="value" style="font-size:16px">${s.lastScan ? new Date(s.lastScan).toLocaleString() : 'Never'}</div></div>
+    `;
+  } catch (e) { console.error(e); }
+}
+
+// ─── CHANNELS ───
+async function loadChannels(page = 1) {
+  currentPage = page;
+  const search = document.getElementById('search-input').value;
+  const category = document.getElementById('filter-category').value;
+  const working = document.getElementById('filter-working').value;
+
+  let url = `${API}/channels?page=${page}&limit=50`;
+  if (search) url += `&search=${encodeURIComponent(search)}`;
+  if (category) url += `&category=${category}`;
+  if (working) url += `&is_working=${working}`;
+
+  try {
+    const r = await fetch(url, { headers: { 'x-admin-password': token } });
+    const data = await r.json();
+    totalPages = data.totalPages || 1;
+    selectedIds.clear();
+    updateBulkDeleteBtn();
+
+    const tbody = document.getElementById('channels-tbody');
+    tbody.innerHTML = data.channels.map(ch => `
+      <tr>
+        <td><input type="checkbox" class="ch-select" data-id="${ch.id}" onchange="toggleSelect('${ch.id}')"></td>
+        <td>${ch.logo_url ? `<img src="${ch.logo_url}" style="width:24px;height:24px;border-radius:4px;vertical-align:middle;margin-right:8px;object-fit:cover">` : ''}${escapeHtml(ch.name)}</td>
+        <td><span class="badge badge-blue">${ch.category || 'general'}</span></td>
+        <td>${ch.country ? ch.country.toUpperCase() : '—'}</td>
+        <td>
+          <span class="badge ${ch.is_working ? 'badge-green' : 'badge-red'}">${ch.is_working ? 'Working' : 'Down'}</span>
+          ${ch.is_hd ? '<span class="badge badge-yellow">HD</span>' : ''}
+        </td>
+        <td class="truncate" title="${escapeHtml(ch.stream_url)}">${escapeHtml(ch.stream_url)}</td>
+        <td>
+          <button class="btn-secondary btn-sm" onclick="reverifyChannel('${ch.id}', this)" title="Re-test stream">↻</button>
+          <button class="btn-secondary btn-sm" onclick="editChannel('${ch.id}')">✎</button>
+          <button class="btn-danger btn-sm" onclick="deleteChannel('${ch.id}')">✕</button>
+        </td>
+      </tr>
+    `).join('');
+
+    // Pagination
+    const pg = document.getElementById('pagination');
+    let pgHtml = `<div class="info">Showing ${(page-1)*50+1}–${Math.min(page*50, data.total)} of ${data.total}</div><div class="btns">`;
+    pgHtml += `<button onclick="loadChannels(${page-1})" ${page<=1?'disabled':''}>‹</button>`;
+    for (let i = Math.max(1,page-2); i <= Math.min(totalPages,page+2); i++) {
+      pgHtml += `<button onclick="loadChannels(${i})" class="${i===page?'active':''}">${i}</button>`;
+    }
+    pgHtml += `<button onclick="loadChannels(${page+1})" ${page>=totalPages?'disabled':''}>›</button></div>`;
+    pg.innerHTML = pgHtml;
+
+  } catch (e) { toast('Failed to load channels', 'error'); }
+}
+
+function debounceSearch() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => loadChannels(1), 300);
+}
+
+function toggleSelect(id) {
+  if (selectedIds.has(id)) selectedIds.delete(id);
+  else selectedIds.add(id);
+  updateBulkDeleteBtn();
+}
+
+function toggleSelectAll() {
+  const checked = document.getElementById('select-all').checked;
+  document.querySelectorAll('.ch-select').forEach(cb => {
+    cb.checked = checked;
+    if (checked) selectedIds.add(cb.dataset.id);
+    else selectedIds.delete(cb.dataset.id);
+  });
+  updateBulkDeleteBtn();
+}
+
+function updateBulkDeleteBtn() {
+  document.getElementById('bulk-delete-btn').style.display = selectedIds.size > 0 ? '' : 'none';
+}
+
+async function bulkDelete() {
+  if (!confirm(`Delete ${selectedIds.size} channels?`)) return;
+  try {
+    await fetch(`${API}/channels/bulk-delete`, {
+      method: 'POST',
+      headers: { 'x-admin-password': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [...selectedIds] }),
+    });
+    toast(`${selectedIds.size} channels deleted`, 'success');
+    loadChannels(currentPage);
+    loadStats();
+  } catch (e) { toast('Delete failed', 'error'); }
+}
+
+async function deleteChannel(id) {
+  if (!confirm('Delete this channel?')) return;
+  try {
+    await fetch(`${API}/channels/${id}`, {
+      method: 'DELETE',
+      headers: { 'x-admin-password': token },
+    });
+    toast('Channel deleted', 'success');
+    loadChannels(currentPage);
+    loadStats();
+  } catch (e) { toast('Delete failed', 'error'); }
+}
+
+async function reverifyChannel(id, btn) {
+  btn.textContent = '⏳';
+  btn.disabled = true;
+  try {
+    const r = await fetch(`${API}/channels/${id}/reverify`, {
+      method: 'POST',
+      headers: { 'x-admin-password': token },
+    });
+    const data = await r.json();
+    toast(data.alive ? 'Stream is working ✓' : 'Stream is down ✗', data.alive ? 'success' : 'error');
+    loadChannels(currentPage);
+    loadStats();
+  } catch (e) { toast('Reverify failed', 'error'); }
+}
+
+function openAddChannelModal() {
+  document.getElementById('channel-modal-title').textContent = 'Add Channel';
+  document.getElementById('edit-channel-id').value = '';
+  ['name','url','logo','country','language','group'].forEach(f => document.getElementById('edit-'+f).value = '');
+  document.getElementById('edit-category').value = 'general';
+  document.getElementById('edit-hd').checked = false;
+  document.getElementById('edit-4k').checked = false;
+  openModal('channel-modal');
+}
+
+async function editChannel(id) {
+  try {
+    const r = await fetch(`${API}/channels/${id}`, { headers: { 'x-admin-password': token } });
+    const ch = await r.json();
+    document.getElementById('channel-modal-title').textContent = 'Edit Channel';
+    document.getElementById('edit-channel-id').value = ch.id;
+    document.getElementById('edit-name').value = ch.name || '';
+    document.getElementById('edit-url').value = ch.stream_url || '';
+    document.getElementById('edit-logo').value = ch.logo_url || '';
+    document.getElementById('edit-category').value = ch.category || 'general';
+    document.getElementById('edit-country').value = ch.country || '';
+    document.getElementById('edit-language').value = ch.language || '';
+    document.getElementById('edit-group').value = ch.group_title || '';
+    document.getElementById('edit-hd').checked = ch.is_hd || false;
+    document.getElementById('edit-4k').checked = ch.is_4k || false;
+    openModal('channel-modal');
+  } catch (e) { toast('Failed to load channel', 'error'); }
+}
+
+async function saveChannel() {
+  const id = document.getElementById('edit-channel-id').value;
+  const body = {
+    name: document.getElementById('edit-name').value,
+    stream_url: document.getElementById('edit-url').value,
+    logo_url: document.getElementById('edit-logo').value || null,
+    category: document.getElementById('edit-category').value,
+    country: document.getElementById('edit-country').value || null,
+    language: document.getElementById('edit-language').value || null,
+    group_title: document.getElementById('edit-group').value || null,
+    is_hd: document.getElementById('edit-hd').checked,
+    is_4k: document.getElementById('edit-4k').checked,
+  };
+
+  if (!body.name || !body.stream_url) return toast('Name and URL required', 'error');
+
+  try {
+    const r = await fetch(id ? `${API}/channels/${id}` : `${API}/channels`, {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'x-admin-password': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      return toast(err.error || 'Save failed', 'error');
+    }
+    closeModal('channel-modal');
+    toast(id ? 'Channel updated' : 'Channel added', 'success');
+    loadChannels(currentPage);
+    loadStats();
+  } catch (e) { toast('Save failed', 'error'); }
+}
+
+// ─── SCAN SOURCES ───
+async function loadSources() {
+  try {
+    const r = await fetch(`${API}/scan-sources`, { headers: { 'x-admin-password': token } });
+    const sources = await r.json();
+    document.getElementById('sources-list').innerHTML = sources.map(s => `
+      <div class="source-card">
+        <div class="info">
+          <div class="name">${escapeHtml(s.name)} <span class="badge ${s.is_active ? 'badge-green' : 'badge-red'}">${s.is_active ? 'Active' : 'Inactive'}</span></div>
+          <div class="url" title="${escapeHtml(s.url)}">${escapeHtml(s.url)}</div>
+        </div>
+        <div class="actions">
+          <button class="btn-secondary btn-sm" onclick="testSource('${s.id}')">Test</button>
+          <button class="btn-secondary btn-sm" onclick="editSource('${s.id}')">✎</button>
+          <button class="btn-danger btn-sm" onclick="deleteSource('${s.id}')">✕</button>
+        </div>
+      </div>
+    `).join('') || '<p style="color:var(--muted)">No scan sources yet. Add one to get started.</p>';
+  } catch (e) { toast('Failed to load sources', 'error'); }
+}
+
+function openAddSourceModal() {
+  document.getElementById('source-modal-title').textContent = 'Add Scan Source';
+  document.getElementById('edit-source-id').value = '';
+  ['name','url','country'].forEach(f => document.getElementById('edit-source-'+f).value = '');
+  document.getElementById('edit-source-type').value = 'm3u';
+  document.getElementById('edit-source-category').value = '';
+  openModal('source-modal');
+}
+
+async function editSource(id) {
+  try {
+    const r = await fetch(`${API}/scan-sources`, { headers: { 'x-admin-password': token } });
+    const sources = await r.json();
+    const s = sources.find(x => x.id === id);
+    if (!s) return;
+    document.getElementById('source-modal-title').textContent = 'Edit Scan Source';
+    document.getElementById('edit-source-id').value = s.id;
+    document.getElementById('edit-source-name').value = s.name;
+    document.getElementById('edit-source-url').value = s.url;
+    document.getElementById('edit-source-type').value = s.source_type || 'm3u';
+    document.getElementById('edit-source-category').value = s.category || '';
+    document.getElementById('edit-source-country').value = s.country || '';
+    openModal('source-modal');
+  } catch (e) { toast('Failed to load source', 'error'); }
+}
+
+async function saveSource() {
+  const id = document.getElementById('edit-source-id').value;
+  const body = {
+    name: document.getElementById('edit-source-name').value,
+    url: document.getElementById('edit-source-url').value,
+    source_type: document.getElementById('edit-source-type').value,
+    category: document.getElementById('edit-source-category').value || null,
+    country: document.getElementById('edit-source-country').value || null,
+  };
+
+  if (!body.name || !body.url) return toast('Name and URL required', 'error');
+
+  try {
+    const r = await fetch(id ? `${API}/scan-sources/${id}` : `${API}/scan-sources`, {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'x-admin-password': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      return toast(err.error || 'Save failed', 'error');
+    }
+    closeModal('source-modal');
+    toast(id ? 'Source updated' : 'Source added', 'success');
+    loadSources();
+  } catch (e) { toast('Save failed', 'error'); }
+}
+
+async function deleteSource(id) {
+  if (!confirm('Delete this scan source?')) return;
+  try {
+    await fetch(`${API}/scan-sources/${id}`, {
+      method: 'DELETE',
+      headers: { 'x-admin-password': token },
+    });
+    toast('Source deleted', 'success');
+    loadSources();
+  } catch (e) { toast('Delete failed', 'error'); }
+}
+
+async function testSource(id) {
+  try {
+    const r = await fetch(`${API}/scan-sources/${id}/test`, {
+      method: 'POST',
+      headers: { 'x-admin-password': token },
+    });
+    const data = await r.json();
+    if (data.success) {
+      toast(`Found ${data.channelCount} channels. Sample: ${data.sample.join(', ')}`, 'success');
+    } else {
+      toast(data.error || 'Test failed', 'error');
+    }
+  } catch (e) { toast('Test failed', 'error'); }
+}
+
+// ─── RUN SCAN ───
+async function runScan() {
+  const btn = document.querySelector('#tab-scan .btn-success');
+  const resultDiv = document.getElementById('scan-result');
+  btn.textContent = '⏳ Scanning...';
+  btn.disabled = true;
+  resultDiv.classList.add('hidden');
+
+  try {
+    const r = await fetch(`${API}/scan`, {
+      method: 'POST',
+      headers: { 'x-admin-password': token },
+    });
+    const data = await r.json();
+    resultDiv.classList.remove('hidden');
+    resultDiv.textContent = JSON.stringify(data, null, 2);
+
+    if (data.success) {
+      toast(`Scan complete: +${data.totalNew} new channels in ${data.elapsed}`, 'success');
+      loadStats();
+      loadChannels();
+    } else {
+      toast('Scan failed', 'error');
+    }
+  } catch (e) {
+    toast('Scan failed', 'error');
+  }
+
+  btn.textContent = '▶ Run Full Scan';
+  btn.disabled = false;
+}
+
+// ─── UTILS ───
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function toast(msg, type = 'success') {
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+// Enter key on login
+document.getElementById('pwd-input').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+</script>
+</body>
+</html>
