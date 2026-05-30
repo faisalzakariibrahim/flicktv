@@ -117,7 +117,7 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() });
 });
 
-// ─── Stream Proxy (CORS bypass + HLS manifest rewriting) ─────────────────────
+// ─── Stream Proxy (CORS bypass + HLS manifest rewriting + Plex token injection) ──
 app.get('/api/proxy/stream', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'URL required' });
@@ -127,22 +127,36 @@ app.get('/api/proxy/stream', async (req, res) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
 
+    // Detect Plex EPG provider URLs and inject auth token
+    const isPlex = decoded.includes('epg.provider.plex.tv') || decoded.includes('epg-ipv4.provider.plex.tv');
+    const fetchHeaders = {
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+      'Referer': new URL(decoded).origin + '/',
+      'Origin': new URL(decoded).origin,
+    };
+    if (isPlex) {
+      // Plex web player public token — allows unauthenticated HLS playback
+      fetchHeaders['X-Plex-Token'] = '9F1pDPzr73oL_idfzXye';
+      fetchHeaders['X-Plex-Product'] = 'FlickTV';
+    }
+
     const response = await fetch(decoded, {
       signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-        'Referer': new URL(decoded).origin + '/',
-        'Origin': new URL(decoded).origin,
-      },
+      headers: fetchHeaders,
+      redirect: 'follow',
     });
     clearTimeout(timeout);
 
-    if (!response.ok) {
+    // Plex returns 401 without token, 302 with token
+    if (response.status === 401) {
+      return res.status(401).json({ error: 'Stream authentication required' });
+    }
+    if (!response.ok && response.status !== 302) {
       return res.status(response.status).json({ error: `Upstream ${response.status}` });
     }
 
     const contentType = response.headers.get('content-type') || '';
-    const isHLS = contentType.includes('mpegurl') || decoded.includes('.m3u8');
+    const isHLS = contentType.includes('mpegurl') || decoded.includes('.m3u8') || response.url.includes('.m3u8');
 
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Headers', 'Range');
@@ -150,7 +164,9 @@ app.get('/api/proxy/stream', async (req, res) => {
     if (isHLS) {
       // Rewrite manifest so all segment/sub-playlist URLs go through this proxy
       const text = await response.text();
-      const rewritten = rewriteM3U8(text, decoded, req);
+      // Use the final URL (after redirects) as the base for manifest rewriting
+      const finalUrl = response.url || decoded;
+      const rewritten = rewriteM3U8(text, finalUrl, req);
       res.set('Content-Type', 'application/vnd.apple.mpegurl');
       return res.send(rewritten);
     }

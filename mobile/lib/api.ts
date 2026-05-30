@@ -82,10 +82,10 @@ export const api = {
   },
   stream: {
     proxyUrl: async (streamUrl: string) => {
-      // Native (iOS/Android): no CORS restrictions, play streams directly.
-      // Web: always proxy — not all HTTPS CDNs send Access-Control-Allow-Origin: *,
-      // so direct loads cause silent CORS failures (black screen / infinite spinner).
-      if (Platform.OS !== 'web') {
+      // Always proxy Plex streams (need X-Plex-Token injection at fetch time).
+      // Web always needs proxy for CORS. Native only needs it for Plex URLs.
+      const isPlex = streamUrl.includes('epg.provider.plex.tv') || streamUrl.includes('epg-ipv4.provider.plex.tv');
+      if (Platform.OS !== 'web' && !isPlex) {
         return streamUrl;
       }
       const { data: { session } } = await supabase.auth.getSession();

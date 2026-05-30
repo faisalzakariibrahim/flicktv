@@ -11,18 +11,20 @@ router.get('/', async (req, res) => {
   const { category, country, hd, search, page = 1, limit = 50 } = req.query;
   const offset = (page - 1) * limit;
 
-  let query = supabase
+  // Build query: return user's channels + system channels (user_id IS NULL)
+  let baseQuery = supabase
     .from('channels')
     .select('*', { count: 'exact' })
-    .eq('user_id', req.user.id)
+    .or(`user_id.eq.${req.user.id},user_id.is.null`)
+    .order('name')
     .range(offset, offset + limit - 1);
 
-  if (category)  query = query.eq('category', category);
-  if (country)   query = query.eq('country', country);
-  if (hd === 'true') query = query.eq('is_hd', true);
-  if (search)    query = query.ilike('name', `%${search}%`);
+  if (category)  baseQuery = baseQuery.eq('category', category);
+  if (country)   baseQuery = baseQuery.eq('country', country);
+  if (hd === 'true') baseQuery = baseQuery.eq('is_hd', true);
+  if (search)    baseQuery = baseQuery.ilike('name', `%${search}%`);
 
-  const { data, error, count } = await query;
+  const { data, error, count } = await baseQuery;
   if (error) return res.status(500).json({ error: error.message });
 
   res.json({ channels: data, total: count, page: +page, limit: +limit });
@@ -39,7 +41,7 @@ router.get('/trending', async (req, res) => {
     .from('channels')
     .select('*')
     .in('id', channelIds)
-    .eq('user_id', req.user.id);
+    .or(`user_id.eq.${req.user.id},user_id.is.null`);
 
   res.json(channels || []);
 });

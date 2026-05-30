@@ -77,6 +77,8 @@ app.use((req, _res, next) => {
 
 // ─── Admin Dashboard (static) ─────────────────────────────────────────────────
 app.use('/admin', express.static(path.join(__dirname, '..', 'public'), { index: 'admin.html' }));
+// Redirect /admin to /admin/ so express.static serves the index file
+app.get('/admin', (_req, res) => res.redirect('/admin/'));
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
