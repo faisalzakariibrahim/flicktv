@@ -34,14 +34,21 @@
       "expo-video",
       [
         "expo-secure-store",
-        { "faceIDPermission": "Allow FlickTV to use Face ID for secure login." }
+        {
+          "faceIDPermission": "Allow FlickTV to use Face ID for secure login."
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
-      "apiUrl": "http://localhost:3001"
-    }
+      "apiUrl": "http://localhost:3001",
+      "router": {},
+      "eas": {
+        "projectId": "8fac759f-61a6-425e-98de-2dfcbb1f75be"
+      }
+    },
+    "owner": "faisalzakariibrahim"
   }
 }

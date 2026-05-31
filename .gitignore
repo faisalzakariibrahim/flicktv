@@ -54,3 +54,4 @@ ssl/
 # Supabase local
 supabase/.branches
 supabase/.temp
+.vercel
