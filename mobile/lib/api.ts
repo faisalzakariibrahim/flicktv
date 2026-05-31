@@ -49,7 +49,7 @@ export const api = {
   channels: {
     list: (params?: Record<string, string>) => {
       const q = params ? '?' + new URLSearchParams(params).toString() : '';
-      return request<any>(`/api/channels${q}`);
+      return request<any>(`/api/channels${q}&limit=200`);
     },
     trending: () => request<any>('/api/channels/trending'),
     get: (id: string) => request<any>(`/api/channels/${id}`),
