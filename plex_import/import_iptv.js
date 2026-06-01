@@ -1,5 +1,7 @@
 const { Client } = require('./node_modules/pg');
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const DB_CONFIG = {
@@ -11,10 +13,34 @@ const DB_CONFIG = {
   ssl: { rejectUnauthorized: false },
 };
 
+const M3U_URL = 'https://iptv-org.github.io/iptv/index.m3u';
 const M3U_FILE = '/tmp/iptv_index.m3u';
 const PLAYLIST_NAME = 'iptv-org Full';
 const PLAYLIST_TYPE = 'm3u_url';
 const BATCH_SIZE = 200;
+
+// ─── DOWNLOAD M3U ────────────────────────────────────────────────────────────
+function downloadM3U() {
+  return new Promise((resolve, reject) => {
+    console.log(`Downloading M3U from ${M3U_URL}...`);
+    const mod = M3U_URL.startsWith('https') ? https : http;
+    const req = mod.get(M3U_URL, { timeout: 60000, headers: { 'User-Agent': 'FlickTV/1.0' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return downloadM3U(res.headers.location).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+      const file = fs.createWriteStream(M3U_FILE);
+      res.pipe(file);
+      file.on('finish', () => {
+        const size = fs.statSync(M3U_FILE).size;
+        console.log(`Downloaded ${(size/1024/1024).toFixed(1)} MB`);
+        resolve();
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
 
 // ─── PARSE M3U ───────────────────────────────────────────────────────────────
 function parseM3U(content) {
@@ -57,6 +83,9 @@ function extractCountry(tvgId) {
 }
 
 async function main() {
+  // Download fresh M3U
+  await downloadM3U();
+  
   console.log('Reading M3U...');
   const content = fs.readFileSync(M3U_FILE, 'utf8');
   console.log(`File: ${(content.length/1024/1024).toFixed(1)} MB`);
