@@ -23,7 +23,10 @@ interface ChannelsStore {
   playlists: any[];
   loading: boolean;
   selectedCategory: string;
+  totalChannels: number;
+  currentPage: number;
   fetchChannels: (params?: Record<string, string>) => Promise<void>;
+  loadMoreChannels: () => Promise<void>;
   fetchTrending: () => Promise<void>;
   fetchFavorites: () => Promise<void>;
   fetchHistory: () => Promise<void>;
@@ -40,6 +43,8 @@ export const useChannelsStore = create<ChannelsStore>((set, get) => ({
   playlists: [],
   loading: false,
   selectedCategory: 'all',
+  totalChannels: 0,
+  currentPage: 1,
 
   fetchChannels: async (params) => {
     set({ loading: true });
@@ -47,11 +52,24 @@ export const useChannelsStore = create<ChannelsStore>((set, get) => ({
       const cat = get().selectedCategory;
       const query = cat !== 'all' ? { ...params, category: cat } : params;
       const res = await api.channels.list(query);
-      set({ channels: res.channels || [] });
+      set({ channels: res.channels || [], totalChannels: res.total || 0, currentPage: 1 });
     } catch (e) {
       console.error('fetchChannels', e);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  loadMoreChannels: async () => {
+    const { currentPage, channels, selectedCategory } = get();
+    const nextPage = currentPage + 1;
+    try {
+      const params: Record<string, string> = { page: String(nextPage) };
+      if (selectedCategory !== 'all') params.category = selectedCategory;
+      const res = await api.channels.list(params);
+      set({ channels: [...channels, ...(res.channels || [])], currentPage: nextPage });
+    } catch (e) {
+      console.error('loadMoreChannels', e);
     }
   },
 

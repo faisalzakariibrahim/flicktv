@@ -12,14 +12,15 @@ import { useAuthStore } from '../../stores/authStore';
 import { useChannelsStore } from '../../stores/channelsStore';
 
 const CATEGORIES = [
-  { label: 'All',          value: 'all' },
-  { label: 'News',         value: 'news' },
-  { label: 'Sports',       value: 'sports' },
-  { label: 'Movies',       value: 'movies' },
-  { label: 'Kids',         value: 'kids' },
-  { label: 'Music',        value: 'music' },
-  { label: 'Documentary',  value: 'documentary' },
-  { label: 'Entertainment',value: 'entertainment' },
+  { label: 'All',          value: 'all',          icon: '⊞' },
+  { label: 'News',         value: 'news',         icon: '📰' },
+  { label: 'Sports',       value: 'sports',       icon: '⚽' },
+  { label: 'Movies',       value: 'movies',       icon: '🎬' },
+  { label: 'Kids',         value: 'kids',         icon: '🧒' },
+  { label: 'Music',        value: 'music',        icon: '🎵' },
+  { label: 'Documentary',  value: 'documentary',  icon: '🌍' },
+  { label: 'Entertainment',value: 'entertainment',icon: '🎭' },
+  { label: 'Religious',    value: 'religious',    icon: '🙏' },
 ];
 
 function HeroChannel({ channel, onPress }: { channel: any; onPress: () => void }) {
@@ -89,7 +90,7 @@ function SectionRow({ title, data, onPress }: { title: string; data: any[]; onPr
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { channels, trending, history, loading, selectedCategory, fetchChannels, fetchTrending, fetchHistory, setCategory } = useChannelsStore();
+  const { channels, trending, history, loading, selectedCategory, totalChannels, fetchChannels, fetchTrending, fetchHistory, setCategory, loadMoreChannels } = useChannelsStore();
 
   useEffect(() => {
     fetchChannels();
@@ -151,6 +152,7 @@ export default function HomeScreen() {
           renderItem={({ item }) => (
             <CategoryPill
               label={item.label}
+              icon={item.icon}
               value={item.value}
               selected={selectedCategory === item.value}
               onPress={() => handleCategoryChange(item.value)}
@@ -175,9 +177,7 @@ export default function HomeScreen() {
             <Text style={styles.sectionTitle}>
               {selectedCategory === 'all' ? 'All Channels' : CATEGORIES.find(c => c.value === selectedCategory)?.label}
             </Text>
-            {channels.length > 0 && (
-              <Text style={styles.sectionCount}>{channels.length}</Text>
-            )}
+            <Text style={styles.sectionCount}>{totalChannels.toLocaleString()} channels</Text>
           </View>
 
           {loading ? (
@@ -191,16 +191,23 @@ export default function HomeScreen() {
               </Pressable>
             </View>
           ) : (
-            <FlatList
-              horizontal
-              data={channels}
-              keyExtractor={i => i.id}
-              renderItem={({ item }) => (
-                <ChannelCard channel={item} onPress={() => goToPlayer(item.id)} />
+            <>
+              <FlatList
+                horizontal
+                data={channels}
+                keyExtractor={i => i.id}
+                renderItem={({ item }) => (
+                  <ChannelCard channel={item} onPress={() => goToPlayer(item.id)} />
+                )}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: theme.spacing.md }}
+              />
+              {channels.length < totalChannels && (
+                <Pressable style={styles.loadMoreBtn} onPress={loadMoreChannels}>
+                  <Text style={styles.loadMoreText}>Load More ({channels.length} of {totalChannels.toLocaleString()})</Text>
+                </Pressable>
               )}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: theme.spacing.md }}
-            />
+            </>
           )}
         </View>
 
@@ -280,6 +287,8 @@ const styles = StyleSheet.create({
   empty:        { alignItems: 'center', paddingVertical: 40, paddingHorizontal: theme.spacing.md },
   emptyIcon:    { fontSize: 48, marginBottom: 12 },
   emptyTitle:   { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, marginBottom: 16 },
-  importBtn:    { backgroundColor: theme.colors.accent, borderRadius: theme.radius.full, paddingHorizontal: 24, paddingVertical: 10 },
+  importBtn: { backgroundColor: theme.colors.accent, borderRadius: theme.radius.full, paddingHorizontal: 24, paddingVertical: 10 },
   importBtnText:{ color: '#000', fontWeight: '800', fontSize: theme.fontSize.sm },
+  loadMoreBtn: { marginHorizontal: theme.spacing.md, marginTop: 12, paddingVertical: 12, borderRadius: theme.radius.md, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center' },
+  loadMoreText: { color: theme.colors.accent, fontWeight: '700', fontSize: theme.fontSize.sm },
 });
