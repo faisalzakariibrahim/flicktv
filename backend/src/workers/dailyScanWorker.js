@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import fetch from 'node-fetch';
 import { parseM3U } from '../parsers/m3uParser.js';
+import { parseCamel1 } from '../parsers/camel1Parser.js';
 import { supabase } from '../server.js';
 import { logger } from '../utils/logger.js';
 
@@ -111,6 +112,43 @@ export async function runScan() {
             .eq('id', source.id);
         }
 
+      } catch (err) {
+        skipped.push({ name: source.name, reason: err.message });
+      }
+    }
+
+    // 5. Handle camel1.tv sources (live match scraping)
+    const camel1Sources = allSources.filter(s => s.source_type === 'camel1');
+    for (const source of camel1Sources) {
+      try {
+        logger.info(`⏰ Scanning camel1.tv for live matches...`);
+        const result = await parseCamel1();
+        if (!result.channels.length) {
+          skipped.push({ name: source.name, reason: result.message || 'No live matches' });
+          continue;
+        }
+
+        totalScanned += result.total;
+        const newChannels = result.channels.filter(ch => !existingUrls.has(ch.stream_url));
+
+        for (let i = 0; i < newChannels.length; i += 50) {
+          const batch = newChannels.slice(i, i + 50);
+          const { data: inserted, error } = await supabase.from('channels').insert(batch).select();
+          if (error) {
+            errors.push({ source: source.name, msg: error.message });
+          } else if (inserted) {
+            totalNew += inserted.length;
+            inserted.forEach(c => existingUrls.add(c.stream_url));
+          }
+        }
+
+        if (source.id) {
+          await supabase.from('scan_sources')
+            .update({ last_scanned_at: new Date(), channel_count: result.total })
+            .eq('id', source.id);
+        }
+
+        logger.info(`⏰ camel1.tv scan: +${newChannels.length} new channels from ${result.matches} matches`);
       } catch (err) {
         skipped.push({ name: source.name, reason: err.message });
       }
