@@ -78,7 +78,9 @@ function SectionRow({ title, data, onPress }: { title: string; data: any[]; onPr
         data={data}
         keyExtractor={i => i.id}
         renderItem={({ item }) => (
-          <ChannelCard channel={item} onPress={() => onPress(item.id)} size="md" />
+          <View style={{ width: 150, marginRight: 8 }}>
+            <ChannelCard channel={item} onPress={() => onPress(item.id)} />
+          </View>
         )}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: theme.spacing.md }}
@@ -193,14 +195,16 @@ export default function HomeScreen() {
           ) : (
             <>
               <FlatList
-                horizontal
                 data={channels}
                 keyExtractor={i => i.id}
+                numColumns={4}
                 renderItem={({ item }) => (
                   <ChannelCard channel={item} onPress={() => goToPlayer(item.id)} />
                 )}
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: theme.spacing.md }}
+                showsVerticalScrollIndicator={false}
+                scrollEnabled={false}
+                contentContainerStyle={{ paddingHorizontal: theme.spacing.md, gap: 8 }}
+                columnWrapperStyle={{ gap: 8 }}
               />
               {channels.length < totalChannels && (
                 <Pressable style={styles.loadMoreBtn} onPress={loadMoreChannels}>

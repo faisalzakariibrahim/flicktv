@@ -15,15 +15,12 @@ interface Props {
   size?: 'sm' | 'md' | 'lg';
 }
 
-export function ChannelCard({ channel, onPress, size = 'md' }: Props) {
-  const isLg = size === 'lg';
-  const isSm = size === 'sm';
-  const cardW = isLg ? 200 : isSm ? 120 : 160;
-  const imgH  = isLg ? 120 : isSm ? 72 : 96;
+export function ChannelCard({ channel, onPress }: Props) {
+  const imgH = 96;
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.card, { width: cardW }, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
       onPress={onPress}
     >
       {/* Thumbnail */}
@@ -70,10 +67,11 @@ export function ChannelCard({ channel, onPress, size = 'md' }: Props) {
 
 const styles = StyleSheet.create({
   card: {
+    flex: 1,
     backgroundColor: theme.colors.card,
     borderRadius: theme.radius.md,
     overflow: 'hidden',
-    marginRight: theme.spacing.sm,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
     ...Platform.select({
