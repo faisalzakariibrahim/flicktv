@@ -22,6 +22,7 @@ import aiRouter from './routes/ai.js';
 import adminRouter from './routes/admin.js';
 import { startStreamHealthWorker } from './workers/streamHealthWorker.js';
 import { startDailyChannelScan } from './workers/dailyScanWorker.js';
+import { startWorldCupWorker } from './workers/worldCupWorker.js';
 import { verifyToken } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
 import path from 'path';
@@ -213,6 +214,124 @@ app.post('/api/xtream/channels', verifyToken, async (req, res) => {
   }
 });
 
+// ─── World Cup API ─────────────────────────────────────────────────────────────
+import { parseWorldCup } from './parsers/worldCupParser.js';
+import { runDetectionCycle, processHighlightQueue } from './workers/highlightClipper.js';
+import { postAllReadyHighlights } from './workers/socialPoster.js';
+
+// Public: Get World Cup matches (no auth needed)
+app.get('/api/worldcup/matches', async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('world_cup_matches')
+      .select('*, match_events(*)')
+      .order('kickoff_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({ success: true, matches: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Public: Get live World Cup matches
+app.get('/api/worldcup/live', async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('v_live_matches')
+      .select('*')
+      .limit(20);
+    if (error) throw error;
+    res.json({ success: true, matches: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Public: Get highlights
+app.get('/api/worldcup/highlights', async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('highlights')
+      .select('*, world_cup_matches(home_team, away_team, home_flag, away_flag)')
+      .in('status', ['ready', 'posted_youtube', 'posted_tiktok', 'posted_both'])
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({ success: true, highlights: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Trigger World Cup match discovery
+app.post('/api/worldcup/discover', verifyToken, async (_req, res) => {
+  try {
+    const { triggerDiscovery } = await import('./workers/worldCupWorker.js');
+    const result = await triggerDiscovery();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Trigger goal detection
+app.post('/api/worldcup/detect', verifyToken, async (_req, res) => {
+  try {
+    const result = await runDetectionCycle();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Trigger highlight rendering
+app.post('/api/worldcup/render', verifyToken, async (_req, res) => {
+  try {
+    const result = await processHighlightQueue();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Post highlights to social media
+app.post('/api/worldcup/post', verifyToken, async (_req, res) => {
+  try {
+    const result = await postAllReadyHighlights();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Add a World Cup match manually
+app.post('/api/worldcup/matches', verifyToken, async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('world_cup_matches').insert(req.body).select().single();
+    if (error) throw error;
+    res.json({ success: true, match: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Update a World Cup match
+app.put('/api/worldcup/matches/:id', verifyToken, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('world_cup_matches')
+      .update({ ...req.body, updated_at: new Date() })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, match: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Error Handler ────────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
   logger.error('Unhandled error', err);
@@ -229,5 +348,6 @@ app.listen(PORT, () => {
 // ─── Background Workers ───────────────────────────────────────────────────────
 startStreamHealthWorker();
 startDailyChannelScan();
+startWorldCupWorker();
 
 export default app;

@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import fetch from 'node-fetch';
 import { parseM3U } from '../parsers/m3uParser.js';
 import { parseCamel1 } from '../parsers/camel1Parser.js';
+import { parseWorldCup } from '../parsers/worldCupParser.js';
 import { supabase } from '../server.js';
 import { logger } from '../utils/logger.js';
 
@@ -152,6 +153,30 @@ export async function runScan() {
       } catch (err) {
         skipped.push({ name: source.name, reason: err.message });
       }
+    }
+
+    // 6. World Cup match scraping (during WC period)
+    try {
+      logger.info(`⏰ Scanning World Cup matches...`);
+      const wcResult = await parseWorldCup();
+      if (wcResult.channels.length) {
+        totalScanned += wcResult.channels.length;
+        const newChannels = wcResult.channels.filter(ch => !existingUrls.has(ch.stream_url));
+
+        for (let i = 0; i < newChannels.length; i += 50) {
+          const batch = newChannels.slice(i, i + 50);
+          const { data: inserted, error } = await supabase.from('channels').insert(batch).select();
+          if (error) {
+            errors.push({ source: 'worldcup', msg: error.message });
+          } else if (inserted) {
+            totalNew += inserted.length;
+            inserted.forEach(c => existingUrls.add(c.stream_url));
+          }
+        }
+        logger.info(`⏰ World Cup: +${newChannels.length} new channels from ${wcResult.matches.length} matches`);
+      }
+    } catch (err) {
+      skipped.push({ name: 'World Cup', reason: err.message });
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);

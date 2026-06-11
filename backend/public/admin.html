@@ -121,6 +121,7 @@
     <h1>FlickTV Admin Dashboard</h1>
     <div class="tabs">
       <div class="tab active" onclick="switchTab('channels', this)">Channels</div>
+      <div class="tab" onclick="switchTab('worldcup', this)">🏆 World Cup</div>
       <div class="tab" onclick="switchTab('sources', this)">Scan Sources</div>
       <div class="tab" onclick="switchTab('scan', this)">Run Scan</div>
     </div>
@@ -182,6 +183,53 @@
         <span style="color:var(--muted);font-size:13px">Scans all active sources and inserts new channels</span>
       </div>
       <div id="scan-result" class="scan-result hidden"></div>
+    </div>
+
+    <!-- WORLD CUP TAB -->
+    <div id="tab-worldcup" class="hidden">
+      <div class="stats" id="wc-stats-bar"></div>
+      <div class="toolbar">
+        <button class="btn-success" onclick="wcDiscover()">🔍 Discover WC Matches</button>
+        <button class="btn-primary" onclick="wcDetect()">⚽ Detect Goals</button>
+        <button class="btn-primary" onclick="wcRender()">🎬 Render Highlights</button>
+        <button class="btn-primary" onclick="wcPost()">📤 Post to Social</button>
+        <button class="btn-secondary" onclick="wcLoadMatches()">↻ Refresh</button>
+      </div>
+      <div id="wc-result" class="scan-result hidden"></div>
+      <h3 style="margin:20px 0 12px;font-size:16px">Live & Upcoming Matches</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Match</th>
+              <th>Group</th>
+              <th>Status</th>
+              <th>Score</th>
+              <th>Kickoff</th>
+              <th>Stream</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="wc-matches-tbody"></tbody>
+        </table>
+      </div>
+      <h3 style="margin:24px 0 12px;font-size:16px">Highlights</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Match</th>
+              <th>Event</th>
+              <th>Status</th>
+              <th>YouTube</th>
+              <th>TikTok</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="wc-highlights-tbody"></tbody>
+        </table>
+      </div>
     </div>
 
   </div>
@@ -649,6 +697,164 @@ function escapeHtml(s) {
   d.textContent = s || '';
   return d.innerHTML;
 }
+
+// ─── WORLD CUP ───
+const WC_API = '/api/worldcup';
+
+async function wcApi(path, opts = {}) {
+  const r = await fetch(WC_API + path, {
+    ...opts,
+    headers: { 'x-admin-password': token, ...(opts.headers || {}) },
+  });
+  return r.json();
+}
+
+function wcShowResult(msg) {
+  const d = document.getElementById('wc-result');
+  d.classList.remove('hidden');
+  d.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
+}
+
+async function wcDiscover() {
+  try {
+    const data = await wcApi('/discover', { method: 'POST' });
+    wcShowResult(data);
+    if (data.newMatches > 0 || data.newChannels > 0) {
+      toast(`WC Discovery: +${data.newMatches} matches, +${data.newChannels} channels`, 'success');
+    } else {
+      toast('No new World Cup matches found', 'success');
+    }
+    wcLoadMatches();
+  } catch (e) { toast('Discovery failed', 'error'); }
+}
+
+async function wcDetect() {
+  try {
+    const data = await wcApi('/detect', { method: 'POST' });
+    wcShowResult(data);
+    if (data.detected > 0) {
+      toast(`⚽ ${data.detected} new events detected!`, 'success');
+    } else {
+      toast('No new events', 'success');
+    }
+  } catch (e) { toast('Detection failed', 'error'); }
+}
+
+async function wcRender() {
+  try {
+    const data = await wcApi('/render', { method: 'POST' });
+    wcShowResult(data);
+    toast(`Rendered ${data.processed} highlights`, 'success');
+    wcLoadMatches();
+  } catch (e) { toast('Render failed', 'error'); }
+}
+
+async function wcPost() {
+  try {
+    const data = await wcApi('/post', { method: 'POST' });
+    wcShowResult(data);
+    if (data.posted > 0) {
+      toast(`📤 Posted ${data.posted} highlights to social media!`, 'success');
+    } else {
+      toast('No ready highlights to post', 'success');
+    }
+    wcLoadMatches();
+  } catch (e) { toast('Posting failed', 'error'); }
+}
+
+async function wcLoadMatches() {
+  try {
+    // Load stats
+    const stats = await wcApi('/live');
+    const matches = await wcApi('/matches');
+    const highlights = await wcApi('/highlights');
+
+    // Stats bar
+    const liveCount = (stats.matches || []).filter(m => m.status === 'live' || m.status === 'halftime').length;
+    const totalMatches = (matches.matches || []).length;
+    const readyHighlights = (highlights.highlights || []).filter(h => h.status === 'ready').length;
+    const postedHighlights = (highlights.highlights || []).filter(h => h.status.startsWith('posted')).length;
+
+    document.getElementById('wc-stats-bar').innerHTML = `
+      <div class="stat-card"><div class="label">Live Now</div><div class="value" style="color:var(--green)">${liveCount}</div></div>
+      <div class="stat-card"><div class="label">Total Matches</div><div class="value">${totalMatches}</div></div>
+      <div class="stat-card"><div class="label">Ready Highlights</div><div class="value" style="color:var(--yellow)">${readyHighlights}</div></div>
+      <div class="stat-card"><div class="label">Posted</div><div class="value" style="color:var(--accent)">${postedHighlights}</div></div>
+    `;
+
+    // Matches table
+    const mbody = document.getElementById('wc-matches-tbody');
+    mbody.innerHTML = (matches.matches || []).map(m => `
+      <tr>
+        <td><strong>${escapeHtml(m.home_team)}</strong> vs <strong>${escapeHtml(m.away_team)}</strong></td>
+        <td>${m.group || '—'}</td>
+        <td><span class="badge ${m.status === 'live' ? 'badge-green' : m.status === 'finished' ? 'badge-blue' : 'badge-yellow'}">${m.status || 'scheduled'}</span></td>
+        <td><strong>${m.home_score} - ${m.away_score}</strong></td>
+        <td>${m.kickoff_at ? new Date(m.kickoff_at).toLocaleString() : 'TBD'}</td>
+        <td>${m.stream_url ? '<span class="badge badge-green">Live</span>' : '<span class="badge badge-red">No Stream</span>'}</td>
+        <td>
+          <button class="btn-primary btn-sm" onclick="wcUpdateScore('${m.id}')">⚽ Update Score</button>
+        </td>
+      </tr>
+    `).join('');
+
+    // Highlights table
+    const hbody = document.getElementById('wc-highlights-tbody');
+    hbody.innerHTML = (highlights.highlights || []).map(h => `
+      <tr>
+        <td>${escapeHtml(h.title)}</td>
+        <td>${h.world_cup_matches ? escapeHtml(h.world_cup_matches.home_team + ' vs ' + h.world_cup_matches.away_team) : '—'}</td>
+        <td><span class="badge badge-blue">${h.event_type || 'highlight'}</span></td>
+        <td><span class="badge ${h.status.startsWith('posted') ? 'badge-green' : h.status === 'ready' ? 'badge-yellow' : 'badge-red'}">${h.status}</span></td>
+        <td>${h.youtube_url ? `<a href="${h.youtube_url}" target="_blank" style="color:var(--accent)">View</a>` : '—'}</td>
+        <td>${h.tiktok_url ? `<a href="${h.tiktok_url}" target="_blank" style="color:var(--accent)">View</a>` : '—'}</td>
+        <td>
+          ${h.status === 'ready' ? '<button class="btn-primary btn-sm" onclick="wcPostSingle(\'' + h.id + '\')">📤 Post</button>' : ''}
+        </td>
+      </tr>
+    `).join('');
+
+  } catch (e) { console.error('WC load failed:', e); }
+}
+
+async function wcUpdateScore(id) {
+  const home = prompt('Home score?');
+  if (home === null) return;
+  const away = prompt('Away score?');
+  if (away === null) return;
+  try {
+    await wcApi(`/matches/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ home_score: parseInt(home), away_score: parseInt(away), status: 'live' }),
+    });
+    toast('Score updated', 'success');
+    wcLoadMatches();
+  } catch (e) { toast('Update failed', 'error'); }
+}
+
+async function wcPostSingle(id) {
+  try {
+    const data = await wcApi('/post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ highlight_id: id }) });
+    wcShowResult(data);
+    toast('Posted!', 'success');
+    wcLoadMatches();
+  } catch (e) { toast('Post failed', 'error'); }
+}
+
+// Update switchTab to handle worldcup tab
+const _origSwitchTab = switchTab;
+switchTab = function(tab, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-channels').classList.toggle('hidden', tab !== 'channels');
+  document.getElementById('tab-sources').classList.toggle('hidden', tab !== 'sources');
+  document.getElementById('tab-scan').classList.toggle('hidden', tab !== 'scan');
+  document.getElementById('tab-worldcup').classList.toggle('hidden', tab !== 'worldcup');
+  if (tab === 'sources') loadSources();
+  if (tab === 'channels') loadStats();
+  if (tab === 'worldcup') wcLoadMatches();
+};
 
 // Close modals on overlay click
 document.querySelectorAll('.modal-overlay').forEach(m => {
