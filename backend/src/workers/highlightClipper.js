@@ -36,27 +36,29 @@ const supabase = createClient(
   }
 );
 
-// ─── API-Football (paid) ────────────────────────────────────────────────────
-// https://www.api-sports.io/football — FIFA World Cup league ID = 1
-const API_FB_BASE = 'https://v3.football.api-sports.io';
-const API_FB_KEY = process.env.API_FOOTBALL_KEY || '';
+// ─── football-data.org API (free) ────────────────────────────────────────────
+// Free tier: 10 requests/minute, covers World Cup
+// Sign up at https://www.football-data.org/ for a free API key
+const FDA_BASE = 'https://api.football-data.org/v4';
+const FDA_KEY = process.env.FOOTBALL_DATA_API_KEY || '';
 
-async function apiFBRequest(endpoint) {
-  const res = await fetch(`${API_FB_BASE}${endpoint}`, {
-    headers: { 'x-apisports-key': API_FB_KEY },
+async function fdaRequest(endpoint) {
+  const res = await fetch(`${FDA_BASE}${endpoint}`, {
+    headers: { 'X-Auth-Token': FDA_KEY },
     signal: AbortSignal.timeout(15000),
   });
-  if (!res.ok) throw new Error(`API-Football HTTP ${res.status}`);
-  const data = await res.json();
-  if (data.errors?.length) throw new Error(`API-Football error: ${JSON.stringify(data.errors)}`);
-  return data;
+  if (!res.ok) {
+    if (res.status === 429) throw new Error('Rate limited by football-data.org');
+    throw new Error(`football-data.org HTTP ${res.status}`);
+  }
+  return res.json();
 }
 
 /**
- * Fetch World Cup fixtures from API-Football
+ * Fetch World Cup fixtures from football-data.org (free)
  */
 async function fetchWCMatchesFromAPI() {
-  if (!API_FB_KEY) {
+  if (!FDA_KEY) {
     // No API key — return matches from our DB
     const { data } = await supabase
       .from('world_cup_matches')
@@ -68,24 +70,24 @@ async function fetchWCMatchesFromAPI() {
   }
 
   try {
-    const data = await apiFBRequest('/fixtures?league=1&season=2026');
-    if (data.response?.length) {
-      return data.response.map(f => ({
-        id: f.fixture.id,
-        home_team: f.teams.home.name,
-        away_team: f.teams.away.name,
-        home_score: f.goals.home ?? 0,
-        away_score: f.goals.away ?? 0,
-        status: f.fixture.status.short,
-        kickoff_at: f.fixture.date,
-        round: f.league.round,
+    const data = await fdaRequest('/competitions/WC/matches?season=2026');
+    if (data.matches?.length) {
+      return data.matches.map(m => ({
+        id: m.id,
+        home_team: m.homeTeam?.name,
+        away_team: m.awayTeam?.name,
+        home_score: m.score?.fullTime?.home ?? 0,
+        away_score: m.score?.fullTime?.away ?? 0,
+        status: m.status,
+        kickoff_at: m.utcDate,
+        round: m.stage,
         stream_url: null,
-        external_id: String(f.fixture.id),
+        external_id: String(m.id),
       }));
     }
     return [];
   } catch (err) {
-    console.warn('⚠️ API-Football fixtures failed:', err.message);
+    console.warn('⚠️ football-data.org failed:', err.message);
     // Fallback to DB
     const { data } = await supabase
       .from('world_cup_matches')
@@ -98,80 +100,45 @@ async function fetchWCMatchesFromAPI() {
 }
 
 /**
- * Fetch live events (goals, cards, subs) for a specific fixture from API-Football
- * This is the real-time goal detection — call during live matches
- */
-async function fetchFixtureEvents(fixtureId) {
-  if (!API_FB_KEY) return [];
-  try {
-    const data = await apiFBRequest(`/fixtures/events?fixture=${fixtureId}`);
-    return (data.response || []).map(e => ({
-      event_type: mapEventType(e.type, e.detail),
-      minute: e.time.elapsed,
-      team: e.team.id === 'home' ? 'home' : 'away',
-      player: e.player?.name || '',
-      description: `${e.type} — ${e.detail || ''}`,
-    }));
-  } catch (err) {
-    console.warn(`⚠️ Events fetch failed for fixture ${fixtureId}:`, err.message);
-    return [];
-  }
-}
-
-/**
- * Map API-Football event types to our internal event types
- */
-function mapEventType(type, detail) {
-  const t = (type || '').toUpperCase();
-  const d = (detail || '').toUpperCase();
-  if (t === 'GOAL') {
-    if (d.includes('OWN')) return 'own_goal';
-    if (d.includes('PENALTY')) return 'penalty';
-    return 'goal';
-  }
-  if (t === 'CARD') {
-    if (d.includes('RED')) return 'red_card';
-    return 'yellow_card';
-  }
-  if (t === 'SUBSTITUTION') return 'substitution';
-  if (t === 'VAR') return 'var_review';
-  return t.toLowerCase();
-}
-
-/**
- * Fetch live match status updates (score, status, elapsed minute)
+ * Fetch live match status from football-data.org
  */
 async function fetchLiveMatchStatus() {
-  if (!API_FB_KEY) return [];
+  if (!FDA_KEY) return [];
   try {
-    const data = await apiFBRequest('/fixtures?league=1&season=2026&live=all');
-    return (data.response || []).map(f => ({
-      id: f.fixture.id,
-      home_team: f.teams.home.name,
-      away_team: f.teams.away.name,
-      home_score: f.goals.home ?? 0,
-      away_score: f.goals.away ?? 0,
-      status: f.fixture.status.short,
-      elapsed: f.fixture.status.elapsed,
-      kickoff_at: f.fixture.date,
-      round: f.league.round,
-      external_id: String(f.fixture.id),
+    const data = await fdaRequest('/competitions/WC/matches?season=2026&status=LIVE,IN_PLAY,PAUSED');
+    return (data.matches || []).map(m => ({
+      id: m.id,
+      home_team: m.homeTeam?.name,
+      away_team: m.awayTeam?.name,
+      home_score: m.score?.fullTime?.home ?? 0,
+      away_score: m.score?.fullTime?.away ?? 0,
+      status: m.status,
+      kickoff_at: m.utcDate,
+      round: m.stage,
+      external_id: String(m.id),
     }));
   } catch (err) {
     console.warn('⚠️ Live status fetch failed:', err.message);
     return [];
   }
 }
+    // Fallback to DB
+    const { data } = await supabase
+      .from('world_cup_matches')
+      .select('*')
+      .in('status', ['live', 'halftime', 'scheduled'])
+      .order('kickoff_at', { ascending: false })
+      .limit(50);
+    return data || [];
+  }
+}
 
-/**
- * Detect score changes / new events by comparing API-Football data with our DB
- * For live matches, also fetches detailed events (goals, cards, subs) in real-time
- * Returns array of new events to process
- */
+// ─── Detect score changes ───────────────────────────────────────────────────
+// Compares football-data.org API data with our DB to find new goals
+// Returns array of new events to process
 export async function detectNewEvents() {
   const apiMatches = await fetchWCMatchesFromAPI();
   const newEvents = [];
-  const liveFixtureIds = [];
 
   for (const match of apiMatches) {
     // Find the match in our DB — try external_id first, then team names
@@ -201,7 +168,7 @@ export async function detectNewEvents() {
     // Check status change
     let status = dbMatch.status || 'scheduled';
     const apiStatus = (match.status || '').toUpperCase();
-    if (['IN_PLAY', 'LIVE', '1H', '2H', 'NS'].includes(apiStatus)) status = 'live';
+    if (['IN_PLAY', 'LIVE', '1H', '2H'].includes(apiStatus)) status = 'live';
     else if (['PAUSED', 'HT'].includes(apiStatus)) status = 'halftime';
     else if (['FINISHED', 'FT', 'AET', 'PEN'].includes(apiStatus)) status = 'finished';
 
@@ -212,8 +179,8 @@ export async function detectNewEvents() {
     }
 
     // Check score change
-    const apiHomeScore = match.home_score ?? match.goals?.home ?? 0;
-    const apiAwayScore = match.away_score ?? match.goals?.away ?? 0;
+    const apiHomeScore = match.home_score ?? match.score?.fullTime?.home ?? 0;
+    const apiAwayScore = match.away_score ?? match.score?.fullTime?.away ?? 0;
 
     if (apiHomeScore !== dbMatch.home_score || apiAwayScore !== dbMatch.away_score) {
       while (apiHomeScore > dbMatch.home_score) {
@@ -242,49 +209,16 @@ export async function detectNewEvents() {
       await supabase.from('world_cup_matches')
         .update({ home_score: apiHomeScore, away_score: apiAwayScore, status, updated_at: new Date() })
         .eq('id', dbMatch.id);
-    }
 
-    // For live matches, fetch detailed events from API-Football (goals, cards, subs)
-    if ((status === 'live' || status === 'halftime') && match.external_id) {
-      liveFixtureIds.push({ fixtureId: match.external_id, dbMatch });
-    }
-  }
-
-  // Fetch detailed events for live matches
-  for (const { fixtureId, dbMatch } of liveFixtureIds) {
-    const events = await fetchFixtureEvents(fixtureId);
-    for (const evt of events) {
-      // Check if we already recorded this event
-      const { data: existing } = await supabase
-        .from('match_events')
-        .select('id')
-        .eq('match_id', dbMatch.id)
-        .eq('event_type', evt.event_type)
-        .eq('minute', evt.minute)
-        .limit(1);
-
-      if (!existing?.length) {
-        // Record in match_events
+      // Record events in match_events table
+      for (const evt of newEvents.filter(e => e.match_id === dbMatch.id)) {
         await supabase.from('match_events').insert({
-          match_id: dbMatch.id,
+          match_id: evt.match_id,
           event_type: evt.event_type,
-          minute: evt.minute,
           team: evt.team,
           player: evt.player,
-          description: evt.description,
+          minute: evt.minute,
         });
-
-        // Queue highlight for goals only
-        if (evt.event_type === 'goal' || evt.event_type === 'own_goal' || evt.event_type === 'penalty') {
-          newEvents.push({
-            match_id: dbMatch.id,
-            event_type: evt.event_type,
-            team: evt.team,
-            player: evt.player,
-            minute: evt.minute,
-            priority: dbMatch.round === 'final' ? 1 : 3,
-          });
-        }
       }
     }
   }
@@ -547,43 +481,27 @@ export async function processHighlightQueue() {
 
 /**
  * Main detection loop — runs via cron every 2 min during matches
- * Uses API-Football for real-time event detection
+ * Uses football-data.org for score/status detection
  */
 export async function runDetectionCycle() {
   console.log('🔍 Starting goal detection cycle...');
   const startTime = Date.now();
 
-  // Use API-Football live status if API key is set
-  let liveMatches = [];
-  if (API_FB_KEY) {
-    try {
-      const liveStatus = await fetchLiveMatchStatus();
-      liveMatches = liveStatus.filter(m =>
-        ['IN_PLAY', 'LIVE', '1H', '2H'].includes((m.status || '').toUpperCase())
-      );
-    } catch (err) {
-      console.warn('⚠️ Live status fetch failed:', err.message);
-    }
-  }
+  // Find live matches with stream URLs
+  const { data: liveMatches } = await supabase
+    .from('world_cup_matches')
+    .select('*')
+    .in('status', ['live', 'halftime'])
+    .not('stream_url', 'is.null');
 
-  // Fallback to DB if API-Football not available or returned empty
-  if (!liveMatches.length) {
-    const { data } = await supabase
-      .from('world_cup_matches')
-      .select('*')
-      .in('status', ['live', 'halftime'])
-      .not('stream_url', 'is.null');
-    liveMatches = data || [];
-  }
-
-  if (!liveMatches.length) {
+  if (!liveMatches?.length) {
     console.log('📭 No live matches to monitor');
     return { detected: 0, rendered: 0 };
   }
 
   console.log(`📺 Monitoring ${liveMatches.length} live matches`);
 
-  // Check for new events via API-Football
+  // Check for new events via football-data.org
   const newEvents = await detectNewEvents();
 
   if (newEvents.length > 0) {
