@@ -13,6 +13,7 @@ import { createClient } from '@supabase/supabase-js';
 import { WebSocket } from 'ws';
 import Anthropic from '@anthropic-ai/sdk';
 import fetch from 'node-fetch';
+import cron from 'node-cron';
 import { parseM3U } from './parsers/m3uParser.js';
 import { parseXMLTV } from './parsers/xmltvParser.js';
 import { parseWorldCup } from './backend/src/parsers/worldCupParser.js';
@@ -431,7 +432,6 @@ app.listen(PORT, () => {
 });
 
 // ─── World Cup Cron ────────────────────────────────────────────────────────────
-import cron from 'node-cron';
 
 function startWorldCupCron() {
   // Match discovery: every 5 minutes
