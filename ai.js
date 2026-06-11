@@ -254,6 +254,149 @@ Respond as JSON only: {"query": "...", "intent": "play|search|recommend|info", "
   }
 });
 
+// ─── Natural Language Search ─────────────────────────────────────────────────
+router.post('/search', async (req, res) => {
+  const { query } = req.body;
+  const userId = req.user.id;
+
+  if (!query) return res.status(400).json({ error: 'Search query required' });
+
+  try {
+    // Use Claude to parse natural language into structured filters
+    const parsePrompt = `You are a channel search query parser for FlickTV AI.
+
+User query: "${query}"
+
+Extract structured filters from this natural language query.
+Respond ONLY with valid JSON, no preamble:
+{
+  "search_terms": "keywords to match against channel names (comma-separated)",
+  "category": "sports|news|movies|entertainment|kids|music|religious|documentary|null",
+  "country": "full country name or null",
+  "language": "language name or null",
+  "is_hd": true|false|null,
+  "is_live": true|false|null
+}
+
+Examples:
+- "Show me soccer channels in Spanish" -> {"search_terms": "soccer,football", "category": "sports", "country": null, "language": "spanish", "is_hd": null, "is_live": true}
+- "Find news from Africa" -> {"search_terms": "news,africa", "category": "news", "country": "africa", "language": null, "is_hd": null, "is_live": null}
+- "Movie channels that are HD" -> {"search_terms": "movie", "category": "movies", "country": null, "language": null, "is_hd": true, "is_live": null}
+- "BBC" -> {"search_terms": "bbc", "category": null, "country": null, "language": null, "is_hd": null, "is_live": null}
+- "Kids cartoons" -> {"search_terms": "kids,cartoon,animation", "category": "kids", "country": null, "language": null, "is_hd": null, "is_live": null}`;
+
+    const parseResponse = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: parsePrompt }],
+    });
+
+    let filters = { search_terms: query, category: null, country: null, language: null, is_hd: null, is_live: null };
+    try {
+      const text = parseResponse.content[0].text.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(text);
+      filters = { ...filters, ...parsed };
+    } catch {
+      // Fall back to raw query as search terms
+    }
+
+    // Build database query
+    let dbQuery = supabase
+      .from('channels')
+      .select('id, name, logo_url, category, group_title, country, language, stream_url, is_hd, is_live, is_4k')
+      .or(`user_id.eq.${userId},user_id.is.null`)
+      .limit(50);
+
+    // Apply structured filters
+    if (filters.category) {
+      dbQuery = dbQuery.eq('category', filters.category);
+    }
+    if (filters.country) {
+      dbQuery = dbQuery.or(`country.ilike.%${filters.country}%,group_title.ilike.%${filters.country}%`);
+    }
+    if (filters.language) {
+      dbQuery = dbQuery.or(`language.ilike.%${filters.language}%,country.ilike.%${filters.language}%`);
+    }
+    if (filters.is_hd === true) {
+      dbQuery = dbQuery.eq('is_hd', true);
+    }
+    if (filters.is_live === true) {
+      dbQuery = dbQuery.eq('is_live', true);
+    }
+
+    // Search terms: try name and group matching
+    if (filters.search_terms) {
+      const terms = filters.search_terms.split(',').map(t => t.trim()).filter(Boolean);
+      if (terms.length > 0) {
+        const nameConditions = terms.map(t => `name.ilike.%${t}%`).join(',');
+        const groupConditions = terms.map(t => `group_title.ilike.%${t}%`).join(',');
+        dbQuery = dbQuery.or(`${nameConditions},${groupConditions}`);
+      }
+    }
+
+    dbQuery = dbQuery.order('is_hd', { ascending: false }).order('name');
+
+    const { data: channels, error } = await dbQuery;
+    if (error) return res.status(500).json({ error: error.message });
+
+    // If few results, ask Claude to rank/rerank for relevance
+    let ranked = channels || [];
+    if (ranked.length > 0 && ranked.length <= 50) {
+      try {
+        const channelList = ranked.slice(0, 30)
+          .map(c => `${c.id}|${c.name}|${c.category || ''}|${c.group_title || ''}|${c.country || ''}`)
+          .join('\n');
+
+        const rankPrompt = `User searched: "${query}"
+Filters detected: ${JSON.stringify(filters)}
+
+Channels found:
+${channelList}
+
+Rank these channels by relevance to the user's query. Return ALL channel IDs sorted most-relevant first.
+Respond ONLY with JSON array: ["uuid1", "uuid2", ...]`;
+
+        const rankResponse = await anthropic.messages.create({
+          model: 'claude-haiku-4-5',
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: rankPrompt }],
+        });
+
+        const rankText = rankResponse.content[0].text.replace(/```json|```/g, '').trim();
+        const rankedIds = JSON.parse(rankText);
+        if (Array.isArray(rankedIds) && rankedIds.length > 0) {
+          const idOrder = new Map(rankedIds.map((id, i) => [id, i]));
+          ranked = ranked.sort((a, b) => {
+            const aIdx = idOrder.get(a.id) ?? 999;
+            const bIdx = idOrder.get(b.id) ?? 999;
+            return aIdx - bIdx;
+          });
+        }
+      } catch {
+        // Ranking failed, keep DB order
+      }
+    }
+
+    // Log to analytics
+    supabase.from('analytics_events').insert({
+      user_id: userId,
+      event_type: 'ai_search',
+      payload: { query, filters, results_count: ranked.length },
+    }).catch(() => {});
+
+    res.json({
+      query,
+      filters,
+      results: ranked,
+      total: ranked.length,
+    });
+
+  } catch (err) {
+    console.error('AI search error:', err);
+    res.status(500).json({ error: 'Search failed. Please try again.' });
+  }
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function buildSystemPrompt(context) {
   return `You are Flick AI, the intelligent assistant for FlickTV AI — a premium IPTV streaming platform.

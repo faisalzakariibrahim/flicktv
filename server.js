@@ -15,6 +15,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import fetch from 'node-fetch';
 import { parseM3U } from './parsers/m3uParser.js';
 import { parseXMLTV } from './parsers/xmltvParser.js';
+import { parseWorldCup } from './backend/src/parsers/worldCupParser.js';
+import { runDetectionCycle, processHighlightQueue } from './backend/src/workers/highlightClipper.js';
+import { postAllReadyHighlights } from './backend/src/workers/socialPoster.js';
 import authRouter from './routes/auth.js';
 import playlistRouter from './routes/playlists.js';
 import channelRouter from './routes/channels.js';
@@ -297,6 +300,120 @@ app.post('/api/xtream/channels', verifyToken, async (req, res) => {
   }
 });
 
+// ─── World Cup API ─────────────────────────────────────────────────────────────
+
+// Public: Get World Cup matches
+app.get('/api/worldcup/matches', async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('world_cup_matches')
+      .select('*, match_events(*)')
+      .order('kickoff_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({ success: true, matches: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Public: Get live World Cup matches
+app.get('/api/worldcup/live', async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('v_live_matches')
+      .select('*')
+      .limit(20);
+    if (error) throw error;
+    res.json({ success: true, matches: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Public: Get highlights
+app.get('/api/worldcup/highlights', async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('highlights')
+      .select('*, world_cup_matches(home_team, away_team, home_flag, away_flag)')
+      .in('status', ['ready', 'posted_youtube', 'posted_tiktok', 'posted_both'])
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({ success: true, highlights: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Trigger World Cup match discovery
+app.post('/api/worldcup/discover', async (_req, res) => {
+  try {
+    const result = await parseWorldCup();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Trigger goal detection
+app.post('/api/worldcup/detect', async (_req, res) => {
+  try {
+    const result = await runDetectionCycle();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Trigger highlight rendering
+app.post('/api/worldcup/render', async (_req, res) => {
+  try {
+    const result = await processHighlightQueue();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Post highlights to social media
+app.post('/api/worldcup/post', async (_req, res) => {
+  try {
+    const result = await postAllReadyHighlights();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Add a World Cup match manually
+app.post('/api/worldcup/matches', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('world_cup_matches').insert(req.body).select().single();
+    if (error) throw error;
+    res.json({ success: true, match: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Update a World Cup match
+app.put('/api/worldcup/matches/:id', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('world_cup_matches')
+      .update({ ...req.body, updated_at: new Date() })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, match: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Error Handler ────────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
   logger.error('Unhandled error', err);
@@ -308,8 +425,53 @@ app.use((err, _req, res, _next) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   logger.info(`FlickTV AI backend running on port ${PORT}`);
-  // Ensure system channels always exist — runs in background, non-blocking
   seedChannelsIfNeeded().catch(err => logger.error('Seed error', err));
+  // World Cup worker: match discovery + goal detection
+  startWorldCupCron();
 });
+
+// ─── World Cup Cron ────────────────────────────────────────────────────────────
+import cron from 'node-cron';
+
+function startWorldCupCron() {
+  // Match discovery: every 5 minutes
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      const wc = await parseWorldCup();
+      if (wc.channels.length) {
+        const { data: existing } = await supabase.from('channels').select('stream_url');
+        const existingUrls = new Set(existing?.map(c => c.stream_url) || []);
+        const newCh = wc.channels.filter(ch => !existingUrls.has(ch.stream_url));
+        if (newCh.length) {
+          for (let i = 0; i < newCh.length; i += 50) {
+            const batch = newCh.slice(i, i + 50).map(ch => ({
+              name: ch.name, stream_url: ch.stream_url, logo_url: ch.logo_url,
+              group_title: ch.group_title || 'FIFA World Cup 2026',
+              tvg_id: ch.tvg_id, tvg_name: ch.tvg_name || ch.name,
+              country: ch.country, language: ch.language, category: 'sports',
+              is_hd: ch.is_hd || false, is_4k: ch.is_4k || false,
+              is_live: true, is_working: true, stream_info: ch.stream_info || {},
+            }));
+            const { data: inserted } = await supabase.from('channels').insert(batch).select();
+            if (inserted) inserted.forEach(c => existingUrls.add(c.stream_url));
+          }
+        }
+        logger.info(`WC Discovery: +${newCh.length} channels from ${wc.matches.length} matches`);
+      }
+    } catch (err) { logger.error('WC discovery error:', err.message); }
+  });
+
+  // Goal detection + highlight rendering: every 2 minutes
+  cron.schedule('*/2 * * * *', async () => {
+    try { await runDetectionCycle(); } catch (err) { logger.error('WC detection error:', err.message); }
+  });
+
+  // Social media posting: every 10 minutes
+  cron.schedule('*/10 * * * *', async () => {
+    try { await postAllReadyHighlights(); } catch (err) { logger.error('WC posting error:', err.message); }
+  });
+
+  logger.info('✅ World Cup cron started (discovery 5min, detection 2min, posting 10min)');
+}
 
 export default app;

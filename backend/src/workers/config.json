@@ -1,0 +1,12 @@
+{
+    "db_path": "~/projects/flicktv/backend/data/flicktv.db",
+    "batch_size": 100,
+    "request_timeout_seconds": 10,
+    "max_concurrent_requests": 20,
+    "consecutive_failure_threshold": 3,
+    "schedule": "0 2 * * *",
+    "log_dir": "~/projects/flicktv/backend/logs",
+    "iptv_org_path": "~/projects/flicktv/vendor/iptv-org",
+    "admin_email": "",
+    "report_on_completion": true
+}

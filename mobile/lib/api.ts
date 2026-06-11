@@ -49,7 +49,11 @@ export const api = {
   channels: {
     list: (params?: Record<string, string>) => {
       const q = params ? '?' + new URLSearchParams(params).toString() : '';
-      return request<any>(`/api/channels${q}&limit=200`);
+      return request<any>(`/api/channels${q}`);
+    },
+    search: (query: string, params?: Record<string, string>) => {
+      const all = { ...params, search: query, limit: '200' };
+      return request<any>(`/api/channels?${new URLSearchParams(all).toString()}`);
     },
     trending: () => request<any>('/api/channels/trending'),
     get: (id: string) => request<any>(`/api/channels/${id}`),
@@ -68,8 +72,12 @@ export const api = {
     chat: (message: string, sessionId?: string, context?: any) =>
       request<any>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ message, sessionId, context }) }),
     recommendations: () => request<any>('/api/ai/recommendations'),
+    search: (query: string) =>
+      request<any>('/api/ai/search', { method: 'POST', body: JSON.stringify({ query }) }),
     voiceSearch: (transcript: string) =>
       request<any>('/api/ai/voice-search', { method: 'POST', body: JSON.stringify({ transcript }) }),
+  },
+      request<any>('/api/ai/search', { method: 'POST', body: JSON.stringify({ query }) }),
   },
   sports: {
     schedule: (sport?: string, league?: string) => {
