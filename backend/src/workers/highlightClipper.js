@@ -25,10 +25,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HIGHLIGHT_DIR = process.env.HIGHLIGHT_OUTPUT_DIR || path.join(__dirname, '..', '..', 'highlights');
 
 // ─── Supabase ────────────────────────────────────────────────────────────────
+// Use fetch-only transport to avoid ws/WebSocket issues on Railway Node 20
 import { createClient } from '@supabase/supabase-js';
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_KEY || ''
+  process.env.SUPABASE_SERVICE_KEY || '',
+  {
+    realtime: { enabled: false },
+    global: { fetch: globalThis.fetch },
+  }
 );
 
 // ─── football-data.org API ─────────────────────────────────────────────────

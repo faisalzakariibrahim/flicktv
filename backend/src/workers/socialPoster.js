@@ -22,7 +22,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { createClient } from '@supabase/supabase-js';
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_KEY || ''
+  process.env.SUPABASE_SERVICE_KEY || '',
+  {
+    realtime: { enabled: false },
+    global: { fetch: globalThis.fetch },
+  }
 );
 
 // ─── YouTube API ────────────────────────────────────────────────────────────
