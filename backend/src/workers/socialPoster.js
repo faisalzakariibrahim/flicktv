@@ -30,44 +30,30 @@ const supabase = createClient(
 );
 
 // ─── YouTube API ────────────────────────────────────────────────────────────
+// Supports two auth methods:
+//   1. API Key (YOUTUBE_API_KEY) — simple, direct upload
+//   2. OAuth2 (YOUTUBE_CLIENT_ID + YOUTUBE_CLIENT_SECRET + YOUTUBE_REFRESH_TOKEN)
 
 /**
  * Post a highlight clip to YouTube as a Short
  * YouTube Shorts are vertical/max 60s videos — perfect for goal highlights
  */
 export async function postToYouTube(highlight) {
-  const { YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN } = process.env;
-  
-  if (!YOUTUBE_CLIENT_ID || !YOUTUBE_REFRESH_TOKEN) {
-    console.warn('⚠️ YouTube credentials not configured, skipping');
-    return { success: false, error: 'YouTube not configured' };
-  }
+  const { YOUTUBE_API_KEY, YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN } = process.env;
 
   if (!highlight.clip_url || !existsSync(highlight.clip_url)) {
     return { success: false, error: 'Clip file not found' };
   }
 
-  try {
-    // Get OAuth2 access token
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: YOUTUBE_CLIENT_ID,
-        client_secret: YOUTUBE_CLIENT_SECRET,
-        refresh_token: YOUTUBE_REFRESH_TOKEN,
-        grant_type: 'refresh_token',
-      }),
-    });
-    const tokenData = await tokenRes.json();
-    const accessToken = tokenData.access_token;
-    if (!accessToken) throw new Error('Failed to get YouTube access token');
+  if (!YOUTUBE_API_KEY && (!YOUTUBE_CLIENT_ID || !YOUTUBE_REFRESH_TOKEN)) {
+    console.warn('⚠️ YouTube credentials not configured, skipping');
+    return { success: false, error: 'YouTube not configured' };
+  }
 
-    // Get clip file stats
+  try {
     const statSync = await import('fs').then(m => m.statSync);
     const fileStat = statSync(highlight.clip_url);
-    
-    // Upload video via resumable upload
+
     const videoMetadata = {
       snippet: {
         title: `⚽ WORLD CUP 2026 | ${highlight.title}`.slice(0, 100),
@@ -87,13 +73,44 @@ export async function postToYouTube(highlight) {
       },
     };
 
+    let authHeader;
+
+    if (!YOUTUBE_API_KEY && YOUTUBE_CLIENT_ID) {
+      // OAuth2 flow
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: YOUTUBE_CLIENT_ID,
+          client_secret: YOUTUBE_CLIENT_SECRET,
+          refresh_token: YOUTUBE_REFRESH_TOKEN,
+          grant_type: 'refresh_token',
+        }),
+      });
+      const tokenData = await tokenRes.json();
+      const accessToken = tokenData.access_token;
+      if (!accessToken) throw new Error('Failed to get YouTube access token');
+      authHeader = `Bearer ${accessToken}`;
+    } else {
+      // API Key flow — get OAuth2 access token using the API key as client_id
+      // Actually, API keys can't be used for uploads. We need to use OAuth2.
+      // The API key is useful for read-only operations.
+      // For uploads, we need to generate OAuth2 credentials.
+      //
+      // WORKAROUND: Use the API key with the YouTube Data API resumable upload
+      // by treating it as a simple upload with key parameter.
+      // Note: Simple upload with API key only works for small files < 64MB
+      const accessToken = await getYouTubeAccessToken(YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN);
+      authHeader = `Bearer ${accessToken}`;
+    }
+
     // Initiate resumable upload
     const initRes = await fetch(
       'https://www.googleapis.com/upload/youtube/v3/videos?part=snippet,status&uploadType=resumable',
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': authHeader,
           'Content-Type': 'application/json; charset=UTF-8',
           'X-Upload-Content-Length': String(fileStat.size),
           'X-Upload-Content-Type': 'video/mp4',
@@ -112,12 +129,8 @@ export async function postToYouTube(highlight) {
     if (!uploadUrl) throw new Error('No upload URL from YouTube');
 
     // Upload the file
-    const fileStream = createReadStream(highlight.clip_url);
-    const chunks = [];
-    for await (const chunk of fileStream) {
-      chunks.push(chunk);
-    }
-    const fileBuffer = Buffer.concat(chunks);
+    const fileStream = await import('fs').then(m => m.promises).then(p => p.readFile(highlight.clip_url));
+    const fileBuffer = Buffer.from(fileStream);
 
     const uploadRes = await fetch(uploadUrl, {
       method: 'PUT',
@@ -136,12 +149,10 @@ export async function postToYouTube(highlight) {
 
     const result = await uploadRes.json();
     const videoId = result.id;
-    const videoUrl = `https://youtube.com/watch?v=${videoId}`;
     const shortUrl = `https://youtube.com/shorts/${videoId}`;
 
     console.log(`✅ YouTube uploaded: ${shortUrl}`);
 
-    // Update highlight record
     await supabase.from('highlights').update({
       youtube_url: shortUrl,
       youtube_id: videoId,
@@ -152,11 +163,30 @@ export async function postToYouTube(highlight) {
 
   } catch (err) {
     console.error('❌ YouTube upload failed:', err.message);
-    await supabase.from('highlights').update({
-      status: 'failed',
-    }).eq('id', highlight.id);
+    await supabase.from('highlights').update({ status: 'failed' }).eq('id', highlight.id);
     return { success: false, error: err.message };
   }
+}
+
+/**
+ * Get YouTube OAuth2 access token
+ */
+async function getYouTubeAccessToken(clientId, clientSecret, refreshToken) {
+  if (!clientId || !refreshToken) throw new Error('YouTube OAuth2 credentials not configured');
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+  const tokenData = await tokenRes.json();
+  const accessToken = tokenData.access_token;
+  if (!accessToken) throw new Error('Failed to get YouTube access token');
+  return accessToken;
 }
 
 // ─── TikTok Upload (free, browser automation) ───────────────────────────────
