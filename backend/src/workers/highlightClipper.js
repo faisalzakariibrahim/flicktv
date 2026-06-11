@@ -48,38 +48,67 @@ async function fdaRequest(endpoint) {
   return res.json();
 }
 
-/**
- * Fetch current World Cup match data from football-data.org
- * Returns array of matches with scores and status
- */
-export async function fetchWCMatchesFromAPI() {
-  if (!FDA_KEY) {
-    // Fallback: return matches from our DB
-    const { data } = await supabase
-      .from('world_cup_matches')
-      .select('*')
-      .in('status', ['live', 'halftime', 'scheduled'])
-      .order('kickoff_at', { ascending: false })
-      .limit(50);
-    return data || [];
+// ─── API-Football (paid, more reliable) ─────────────────────────────────────
+const API_FB_BASE = 'https://v3.football.api-sports.io';
+const API_FB_KEY = process.env.API_FOOTBALL_KEY || '';
+
+async function fetchWCMatchesFromAPI() {
+  // Try API-Football first (paid tier, more reliable)
+  if (API_FB_KEY) {
+    try {
+      const res = await fetch(`${API_FB_BASE}/fixtures?league=1&season=2026`, {
+        headers: { 'x-apisports-key': API_FB_KEY },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) throw new Error(`API-Football HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.response?.length) {
+        return data.response.map(f => ({
+          id: f.fixture.id,
+          home_team: f.teams.home.name,
+          away_team: f.teams.away.name,
+          home_score: f.goals.home ?? 0,
+          away_score: f.goals.away ?? 0,
+          status: f.fixture.status.short,
+          kickoff_at: f.fixture.date,
+          round: f.league.round,
+          stream_url: null,
+          external_id: f.fixture.id,
+        }));
+      }
+    } catch (err) {
+      console.warn('⚠️ API-Football failed, falling back:', err.message);
+    }
   }
 
-  try {
-    // football-data.org World Cup competition code is typically WC
-    // You may need to update this based on the 2026 season
-    const data = await fdaRequest('/competitions/WC/matches?season=2026');
-    return data.matches || [];
-  } catch (err) {
-    // Fallback to DB if API fails
-    console.warn('⚠️ football-data.org unavailable, using DB data:', err.message);
-    const { data } = await supabase
-      .from('world_cup_matches')
-      .select('*')
-      .in('status', ['live', 'halftime', 'scheduled'])
-      .order('kickoff_at', { ascending: false })
-      .limit(50);
-    return data || [];
+  // Try free football-data.org
+  if (FDA_KEY) {
+    try {
+      const data = await fdaRequest('/competitions/WC/matches?season=2026');
+      return (data.matches || []).map(m => ({
+        id: m.id,
+        home_team: m.homeTeam?.name,
+        away_team: m.awayTeam?.name,
+        home_score: m.score?.fullTime?.home ?? 0,
+        away_score: m.score?.fullTime?.away ?? 0,
+        status: m.status,
+        kickoff_at: m.utcDate,
+        round: m.stage,
+        stream_url: null,
+      }));
+    } catch (err) {
+      console.warn('⚠️ football-data.org failed:', err.message);
+    }
   }
+
+  // Fallback: return matches from our DB
+  const { data } = await supabase
+    .from('world_cup_matches')
+    .select('*')
+    .in('status', ['live', 'halftime', 'scheduled'])
+    .order('kickoff_at', { ascending: false })
+    .limit(50);
+  return data || [];
 }
 
 /**
@@ -91,27 +120,36 @@ export async function detectNewEvents() {
   const newEvents = [];
 
   for (const match of apiMatches) {
-    // Find the match in our DB by teams
-    const homeName = match.homeTeam?.name || match.home_team;
-    const awayName = match.awayTeam?.name || match.away_team;
-    if (!homeName || !awayName) continue;
+    // Find the match in our DB — try external_id first, then team names
+    let dbMatch = null;
+    if (match.external_id) {
+      const { data: dbById } = await supabase
+        .from('world_cup_matches')
+        .select('*')
+        .eq('match_id_ext', String(match.external_id))
+        .limit(1);
+      if (dbById?.length) dbMatch = dbById[0];
+    }
+    if (!dbMatch) {
+      const homeName = match.homeTeam?.name || match.home_team;
+      const awayName = match.awayTeam?.name || match.away_team;
+      if (!homeName || !awayName) continue;
+      const { data: dbByTeams } = await supabase
+        .from('world_cup_matches')
+        .select('*')
+        .ilike('home_team', `%${homeName}%`)
+        .ilike('away_team', `%${awayName}%`)
+        .limit(1);
+      if (dbByTeams?.length) dbMatch = dbByTeams[0];
+    }
+    if (!dbMatch) continue;
 
-    const { data: dbMatches } = await supabase
-      .from('world_cup_matches')
-      .select('*')
-      .ilike('home_team', `%${homeName}%`)
-      .ilike('away_team', `%${awayName}%`)
-      .limit(1);
-
-    if (!dbMatches?.length) continue;
-
-    const dbMatch = dbMatches[0];
-
-    // Check status change
-    let status = 'scheduled';
-    if (match.status === 'IN_PLAY') status = 'live';
-    else if (match.status === 'PAUSED') status = 'halftime';
-    else if (match.status === 'FINISHED') status = 'finished';
+    // Check status change — handle both API formats
+    let status = dbMatch.status || 'scheduled';
+    const apiStatus = match.status?.toUpperCase?.() || match.status || '';
+    if (apiStatus === 'IN_PLAY' || apiStatus === 'LIVE' || apiStatus === '1H' || apiStatus === '2H') status = 'live';
+    else if (apiStatus === 'PAUSED' || apiStatus === 'HT') status = 'halftime';
+    else if (apiStatus === 'FINISHED' || apiStatus === 'FT') status = 'finished';
 
     if (status !== dbMatch.status) {
       await supabase.from('world_cup_matches')
@@ -119,9 +157,9 @@ export async function detectNewEvents() {
         .eq('id', dbMatch.id);
     }
 
-    // Check score change
-    const apiHomeScore = match.score?.fullTime?.home ?? match.score?.fullTime?.home ?? 0;
-    const apiAwayScore = match.score?.fullTime?.away ?? match.score?.fullTime?.away ?? 0;
+    // Check score change — handle both API-Football and football-data.org formats
+    const apiHomeScore = match.home_score ?? match.score?.fullTime?.home ?? match.goals?.home ?? 0;
+    const apiAwayScore = match.away_score ?? match.score?.fullTime?.away ?? match.goals?.away ?? 0;
 
     if (apiHomeScore !== dbMatch.home_score || apiAwayScore !== dbMatch.away_score) {
       // Detect goals

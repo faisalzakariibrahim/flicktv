@@ -16,13 +16,21 @@ import fetch from 'node-fetch';
 import cron from 'node-cron';
 import { parseM3U } from './parsers/m3uParser.js';
 import { parseXMLTV } from './parsers/xmltvParser.js';
-import { parseWorldCup } from './backend/src/parsers/worldCupParser.js';
-import { runDetectionCycle, processHighlightQueue } from './backend/src/workers/highlightClipper.js';
-import { postAllReadyHighlights } from './backend/src/workers/socialPoster.js';
 import authRouter from './routes/auth.js';
 import playlistRouter from './routes/playlists.js';
 import channelRouter from './routes/channels.js';
 import userRouter from './routes/users.js';
+
+// World Cup imports — wrapped to prevent crash if dependencies missing
+let parseWorldCup, runDetectionCycle, processHighlightQueue, postAllReadyHighlights;
+try {
+  parseWorldCup = (await import('./backend/src/parsers/worldCupParser.js')).default;
+  ({ runDetectionCycle, processHighlightQueue } = await import('./backend/src/workers/highlightClipper.js'));
+  postAllReadyHighlights = (await import('./backend/src/workers/socialPoster.js')).postAllReadyHighlights;
+  console.log('✅ World Cup modules loaded');
+} catch (err) {
+  console.warn('⚠️ World Cup modules failed to load:', err.message);
+}
 import aiRouter from './ai.js';
 import adminRouter from './routes/admin.js';
 import sportsRouter from './routes/sports.js';
@@ -434,6 +442,10 @@ app.listen(PORT, () => {
 // ─── World Cup Cron ────────────────────────────────────────────────────────────
 
 function startWorldCupCron() {
+  if (!parseWorldCup) {
+    logger.warn('World Cup modules not loaded — cron disabled');
+    return;
+  }
   // Match discovery: every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
     try {
@@ -462,14 +474,18 @@ function startWorldCupCron() {
   });
 
   // Goal detection + highlight rendering: every 2 minutes
-  cron.schedule('*/2 * * * *', async () => {
-    try { await runDetectionCycle(); } catch (err) { logger.error('WC detection error:', err.message); }
-  });
+  if (runDetectionCycle) {
+    cron.schedule('*/2 * * * *', async () => {
+      try { await runDetectionCycle(); } catch (err) { logger.error('WC detection error:', err.message); }
+    });
+  }
 
   // Social media posting: every 10 minutes
-  cron.schedule('*/10 * * * *', async () => {
-    try { await postAllReadyHighlights(); } catch (err) { logger.error('WC posting error:', err.message); }
-  });
+  if (postAllReadyHighlights) {
+    cron.schedule('*/10 * * * *', async () => {
+      try { await postAllReadyHighlights(); } catch (err) { logger.error('WC posting error:', err.message); }
+    });
+  }
 
   logger.info('✅ World Cup cron started (discovery 5min, detection 2min, posting 10min)');
 }
