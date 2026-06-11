@@ -159,90 +159,45 @@ export async function postToYouTube(highlight) {
   }
 }
 
-// ─── TikTok API ─────────────────────────────────────────────────────────────
+// ─── TikTok Upload (free, browser automation) ───────────────────────────────
+// No API credentials needed. Uses Playwright to upload via TikTok's web UI.
+// Set TIKTOK_COOKIE env var with path to cookies JSON for persistent login.
 
 /**
- * Post a highlight clip to TikTok
- * Uses the TikTok for Developers Video API
- * Note: Requires TikTok developer account + app approval
- * 
- * For a simpler approach, we can use browser automation to post manually,
- * or use services like Bland.ai for automated posting.
+ * Post a highlight clip to TikTok via browser automation (free, no API key)
  */
 export async function postToTikTok(highlight) {
-  const { TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET } = process.env;
-
-  if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET) {
-    console.warn('⚠️ TikTok credentials not configured, skipping');
-    return { success: false, error: 'TikTok not configured' };
-  }
-
   if (!highlight.clip_url || !existsSync(highlight.clip_url)) {
     return { success: false, error: 'Clip file not found' };
   }
 
   try {
-    // Step 1: Get access token
-    const tokenRes = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_key: TIKTOK_CLIENT_KEY,
-        client_secret: TIKTOK_CLIENT_SECRET,
-        grant_type: 'client_credentials',
-        scope: 'video.publish',
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    const tokenData = await tokenRes.json();
-    const accessToken = tokenData.access_token || tokenData.data?.access_token;
-    if (!accessToken) throw new Error(`TikTok auth failed: ${JSON.stringify(tokenData)}`);
+    // Dynamic import to avoid loading Playwright if not needed
+    const { uploadToTikTok } = await import('./tiktokUploader.js');
 
-    // Step 2: Publish video
-    const publishUrl = 'https://open.tiktokapis.com/v2/video/publish/';
-    const videoMetadata = {
-      text: [
-        `⚽ WORLD CUP 2026 HIGHLIGHT 🔥`,
-        highlight.title,
-        highlight.description,
-        '',
-        '#WorldCup2026 #FIFAWorldCup #Football #FlickTV #Goals #Soccer',
-      ].join('\n').slice(0, 2200), // TikTok caption limit
-    };
+    const caption = [
+      `⚽ WORLD CUP 2026 HIGHLIGHT 🔥`,
+      highlight.title,
+      highlight.description,
+      '',
+      '#WorldCup2026 #FIFAWorldCup #Football #FlickTV #Goals #Soccer #Highlights',
+    ].join('\n').slice(0, 2200);
 
-    const formData = new FormData();
-    formData.append('video', new Blob([await import('fs').then(m => m.promises).then(p => p.readFile(highlight.clip_url))]), 'video/mp4');
-    formData.append('text', videoMetadata.text);
-
-    const publishRes = await fetch(publishUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      body: formData,
-      signal: AbortSignal.timeout(120000),
+    const result = await uploadToTikTok(highlight.clip_url, caption, {
+      headless: true,
     });
 
-    const publishResult = await publishRes.json();
-    
-    if (!publishRes.ok || publishResult.error_code) {
-      throw new Error(`TikTok publish failed: ${JSON.stringify(publishResult)}`);
+    if (result.success) {
+      console.log(`✅ TikTok uploaded: ${result.url}`);
+      await supabase.from('highlights').update({
+        tiktok_url: result.url,
+        status: highlight.youtube_url ? 'posted_both' : 'posted_tiktok',
+      }).eq('id', highlight.id);
+      return { success: true, url: result.url };
+    } else {
+      console.error('❌ TikTok upload failed:', result.error);
+      return { success: false, error: result.error };
     }
-
-    const tiktokId = publishResult.data?.publish_id;
-    const tiktokUrl = `https://tiktok.com/@flicktv/video/${tiktokId}`;
-
-    console.log(`✅ TikTok posted: ${tiktokUrl}`);
-
-    // Update highlight record
-    await supabase.from('highlights').update({
-      tiktok_url: tiktokUrl,
-      tiktok_id: tiktokId,
-      status: highlight.youtube_url ? 'posted_both' : 'posted_tiktok',
-    }).eq('id', highlight.id);
-
-    return { success: true, tiktokId, url: tiktokUrl };
-
   } catch (err) {
     console.error('❌ TikTok post failed:', err.message);
     return { success: false, error: err.message };
